@@ -1,10 +1,10 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { computeLevelProgress, summarizeSession } from '@quizbyte/shared';
 
-import { Button, Card, ProgressBar, Screen, Text } from '@/components/ui';
+import { Button, Card, EmptyState, ProgressBar, Screen, Text } from '@/components/ui';
 import { useStartQuiz } from '@/features/quiz/useStartQuiz';
 import { useCategories } from '@/features/quiz/useCategories';
 import { useQuizSessionStore } from '@/state/quizSessionStore';
@@ -16,13 +16,15 @@ export default function QuizResultScreen() {
   const startQuiz = useStartQuiz();
   const categories = useCategories();
 
-  useEffect(() => {
-    if (!result) router.replace('/(tabs)');
-  }, [result, router]);
-
   const summary = useMemo(() => (result ? summarizeSession(result.questions, result.attempts) : null), [result]);
 
-  if (!result || !summary) return <Screen scroll={false} />;
+  if (!result || !summary) {
+    return (
+      <Screen>
+        <EmptyState title="Kein Ergebnis vorhanden" actionLabel="Zur Startseite" onAction={() => router.dismissTo('/(tabs)')} />
+      </Screen>
+    );
+  }
 
   const levelBefore = computeLevelProgress(result.startTotalXp);
   const levelAfter = computeLevelProgress(result.totalXpAfter);

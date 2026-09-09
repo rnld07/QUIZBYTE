@@ -37,7 +37,8 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     loginUrl.search = '';
     return NextResponse.redirect(loginUrl);
   }
-  if (user && isLogin) {
+  // Signed-in users skip the login page – unless they were sent there because they lack the admin role.
+  if (user && isLogin && !request.nextUrl.searchParams.has('error')) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = '/dashboard';
     dashboardUrl.search = '';
