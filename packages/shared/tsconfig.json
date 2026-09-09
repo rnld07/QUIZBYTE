@@ -1,0 +1,7 @@
+{
+  "extends": "../config/tsconfig/library.json",
+  "compilerOptions": {
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "vitest.config.ts", "eslint.config.mjs"]
+}

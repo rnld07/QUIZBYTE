@@ -1,0 +1,33 @@
+{
+  "name": "@quizbyte/admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QuizByte admin panel (Next.js) for managing categories, questions, media and bulk imports",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@quizbyte/database": "workspace:*",
+    "@quizbyte/shared": "workspace:*",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.116.0",
+    "next": "16.3.4",
+    "papaparse": "^5.7.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "zod": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.3.4",
+    "typescript": "~6.0.3"
+  }
+}

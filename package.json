@@ -1,0 +1,28 @@
+{
+  "name": "quizbyte",
+  "private": true,
+  "version": "0.1.0",
+  "description": "QuizByte – gamified computer science quiz & learning app (mobile app, admin panel, shared domain logic)",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "mobile": "pnpm --filter @quizbyte/mobile start",
+    "admin": "pnpm --filter @quizbyte/admin dev",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "db:start": "pnpm --filter @quizbyte/database start",
+    "db:reset": "pnpm --filter @quizbyte/database reset",
+    "db:push": "pnpm --filter @quizbyte/database push",
+    "db:types": "pnpm --filter @quizbyte/database types",
+    "db:verify": "pnpm --filter @quizbyte/database verify",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,sql}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6",
+    "typescript": "~6.0.3"
+  }
+}

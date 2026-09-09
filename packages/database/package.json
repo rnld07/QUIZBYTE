@@ -1,0 +1,25 @@
+{
+  "name": "@quizbyte/database",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Supabase schema: versioned migrations, seed data, generated database types and a local verification harness",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "npx --yes supabase@2 start",
+    "stop": "npx --yes supabase@2 stop",
+    "reset": "npx --yes supabase@2 db reset",
+    "push": "npx --yes supabase@2 db push",
+    "types": "npx --yes supabase@2 gen types typescript --local --schema public > src/database.types.ts",
+    "types:remote": "npx --yes supabase@2 gen types typescript --linked --schema public > src/database.types.ts",
+    "verify": "bash scripts/verify-local.sh",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}

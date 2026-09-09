@@ -1,0 +1,46 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+out/
+.next/
+web-build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Expo
+.expo/
+expo-env.d.ts
+.metro-health-check*
+apps/mobile/ios/
+apps/mobile/android/
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Supabase local dev
+packages/database/supabase/.branches/
+packages/database/supabase/.temp/
+packages/database/.local-pg/
+
+# env files – never commit real secrets
+.env
+.env.*
+!.env.example
+
+# logs / misc
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.pnpm-debug.log*
+.DS_Store
+*.pem
+coverage/
+.vercel
