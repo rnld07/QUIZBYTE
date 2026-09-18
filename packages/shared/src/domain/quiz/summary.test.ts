@@ -8,6 +8,8 @@ const question = (id: string, subcategory: string | null): QuizQuestion => ({
   categoryId: 'cat',
   categoryName: 'Netzwerke',
   categorySlug: 'netzwerke',
+  categoryIcon: 'git-network',
+  categoryAccentColor: '#06B6D4',
   subcategory,
   questionText: `Frage ${id}`,
   answers: { A: 'a', B: 'b', C: 'c', D: 'd' },
@@ -48,21 +50,41 @@ describe('summarizeSession', () => {
       attempt('3', true),
       attempt('4', true),
     ]);
-    expect(summary.strongestTopic?.label).toBe('DNS');
-    expect(summary.weakestTopic?.label).toBe('OSI');
+    expect(summary.strongestTopics.map((topic) => topic.label)).toEqual(['DNS']);
+    expect(summary.weakestTopics.map((topic) => topic.label)).toEqual(['OSI']);
   });
 
   it('does not report topics when only one topic was played', () => {
     const questions = [question('1', 'OSI'), question('2', 'OSI')];
     const summary = summarizeSession(questions, [attempt('1', true), attempt('2', false)]);
-    expect(summary.strongestTopic).toBeNull();
-    expect(summary.weakestTopic).toBeNull();
+    expect(summary.strongestTopics).toEqual([]);
+    expect(summary.weakestTopics).toEqual([]);
   });
 
   it('falls back to the category name when a question has no subcategory', () => {
     const questions = [question('1', null), question('2', 'DNS')];
     const summary = summarizeSession(questions, [attempt('1', false), attempt('2', true)]);
-    expect(summary.weakestTopic?.label).toBe('Netzwerke');
+    expect(summary.weakestTopics.map((t) => t.label)).toEqual(['Netzwerke']);
+  });
+
+  it('reports no weakest topic when every topic is equally good', () => {
+    const questions = [question('1', 'OSI'), question('2', 'DNS')];
+    const summary = summarizeSession(questions, [attempt('1', true), attempt('2', true)]);
+    expect(summary.weakestTopics).toEqual([]);
+    expect(summary.strongestTopics.map((t) => t.label)).toEqual(['DNS', 'OSI']);
+  });
+
+  it('lists every topic that shares the top spot', () => {
+    const questions = [question('1', 'OSI'), question('2', 'DNS'), question('3', 'ARP')];
+    const summary = summarizeSession(questions, [attempt('1', true), attempt('2', true), attempt('3', false)]);
+    expect(summary.strongestTopics.map((t) => t.label).sort()).toEqual(['DNS', 'OSI']);
+    expect(summary.weakestTopics.map((t) => t.label)).toEqual(['ARP']);
+  });
+
+  it('lists every topic that shares the bottom spot', () => {
+    const questions = [question('1', 'OSI'), question('2', 'DNS'), question('3', 'ARP')];
+    const summary = summarizeSession(questions, [attempt('1', true), attempt('2', false), attempt('3', false)]);
+    expect(summary.weakestTopics.map((t) => t.label).sort()).toEqual(['ARP', 'DNS']);
   });
 
   it('handles abandoned sessions with no attempts', () => {

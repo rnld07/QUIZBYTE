@@ -1,4 +1,5 @@
 import { xpConfig } from '../../config/xp';
+import type { Difficulty, SessionType } from '../../types/domain';
 
 export interface LevelProgress {
   /** Current level, starting at 1. */
@@ -69,8 +70,9 @@ export function computeLevelProgress(totalXp: number): LevelProgress {
 }
 
 /** XP awarded for a single answer. Mirrors `public.xp_for_answer` in the database. */
-export function xpForAnswer(isCorrect: boolean): number {
-  return isCorrect ? xpConfig.CORRECT_ANSWER_XP : xpConfig.WRONG_ANSWER_XP;
+export function xpForAnswer(isCorrect: boolean, difficulty: Difficulty = 'medium'): number {
+  if (!isCorrect) return xpConfig.WRONG_ANSWER_XP;
+  return xpConfig.CORRECT_ANSWER_XP[difficulty] ?? xpConfig.CORRECT_ANSWER_XP.medium;
 }
 
 /** Bonus XP for completing a session. Mirrors `public.complete_quiz_session`. */
@@ -81,4 +83,107 @@ export function xpForSessionCompletion(): number {
 /** Returns the levels gained when moving from `fromXp` to `toXp` (0 if none). */
 export function levelsGained(fromXp: number, toXp: number): number {
   return Math.max(0, computeLevelProgress(toXp).level - computeLevelProgress(fromXp).level);
+}
+
+export interface AttemptXpInput {
+  isCorrect: boolean;
+  difficulty: Difficulty;
+  /** True when this question was already answered correctly at some point. */
+  alreadyCorrect: boolean;
+  /** The daily quiz pays double. */
+  sessionType: SessionType;
+  /** True for a second daily round on the same day – those pay nothing. */
+  repeatedDaily?: boolean;
+}
+
+/**
+ * XP for one answer. Mirrors `public.score_quiz_attempt` in the database.
+ *
+ * A question pays out for the **first correct** answer only: getting it right
+ * after an earlier mistake still counts, repeating one you already knew does not.
+ * A repeated daily round pays nothing at all – only the day's first one counts.
+ *
+ * The daily round is the exception to the "already knew it" rule: its five
+ * questions are picked by the server and cannot be avoided, so every correct
+ * answer pays there. Leaving this out made the result screen report a handful
+ * of XP against a maximum that assumed the opposite.
+ */
+export function xpForAttempt({ isCorrect, difficulty, alreadyCorrect, sessionType, repeatedDaily = false }: AttemptXpInput): number {
+  const isDaily = sessionType === 'daily';
+  if (!isCorrect || repeatedDaily) return 0;
+  if (alreadyCorrect && !isDaily) return 0;
+  const base = xpForAnswer(true, difficulty);
+  return isDaily ? base * xpConfig.DAILY_XP_MULTIPLIER : base;
+}
+
+/**
+ * The most XP a session could have paid out: every question answered correctly
+ * plus the completion bonus, with the daily multiplier applied to both.
+ *
+ * Used by the daily result to show "x von y XP" instead of the level bar.
+ */
+export function maxXpForSession(questions: readonly { difficulty: Difficulty }[], sessionType: SessionType): number {
+  const multiplier = sessionType === 'daily' ? xpConfig.DAILY_XP_MULTIPLIER : 1;
+  const answers = questions.reduce((sum, question) => sum + xpForAnswer(true, question.difficulty), 0);
+  return (answers + xpConfig.SESSION_COMPLETION_XP) * multiplier;
+}
+
+/** The bit of an attempt this module needs to judge whether it could pay. */
+export interface ScoredAttempt {
+  questionId: string;
+  isCorrect: boolean;
+  xpEarned: number;
+}
+
+/**
+ * The most XP a session could realistically have paid.
+ *
+ * A question that was answered correctly at some earlier point never pays
+ * again, so a correct answer worth 0 XP is proof that this question could not
+ * pay in this round – it is left out of the maximum. Without that, a perfect
+ * round reads as "100 of 144 XP" even though 144 was never reachable.
+ *
+  * Questions answered wrong still count in full: those XP really were missed.
+ *
+ * The daily is the exception: its five questions are picked by the server, so
+ * every correct answer pays there and everything is reachable.
+ */
+export function achievableXpForSession(
+  questions: readonly { id: string; difficulty: Difficulty }[],
+  sessionType: SessionType,
+  attempts: readonly ScoredAttempt[],
+): number {
+  const blocked =
+    sessionType === 'daily'
+      ? new Set<string>()
+      : new Set(attempts.filter((attempt) => attempt.isCorrect && attempt.xpEarned === 0).map((attempt) => attempt.questionId));
+  const multiplier = sessionType === 'daily' ? xpConfig.DAILY_XP_MULTIPLIER : 1;
+  const answers = questions.reduce(
+    (sum, question) => (blocked.has(question.id) ? sum : sum + xpForAnswer(true, question.difficulty)),
+    0,
+  );
+  return (answers + xpConfig.SESSION_COMPLETION_XP) * multiplier;
+}
+
+/**
+ * XP for one correct duel answer.
+ *
+ * Rounded, because 1.5× an odd value is not a whole number and XP are integers –
+ * the database rounds the same way.
+ */
+export function xpForDuelAnswer(difficulty: Difficulty): number {
+  return Math.round(xpForAnswer(true, difficulty) * xpConfig.DUEL_XP_MULTIPLIER);
+}
+
+/** Bonus for the winner of a duel; a draw pays it to nobody. */
+export function duelWinnerXp(myCorrect: number, theirCorrect: number): number {
+  return myCorrect > theirCorrect ? xpConfig.DUEL_WIN_XP : 0;
+}
+
+/** Who won – `null` on a draw or while the duel is still open. */
+export function duelOutcome(myCorrect: number | null, theirCorrect: number | null): 'won' | 'lost' | 'draw' | 'open' {
+  if (myCorrect === null || theirCorrect === null) return 'open';
+  if (myCorrect > theirCorrect) return 'won';
+  if (myCorrect < theirCorrect) return 'lost';
+  return 'draw';
 }

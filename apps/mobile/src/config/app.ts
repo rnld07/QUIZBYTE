@@ -8,4 +8,6 @@ export const appInfo = {
   supportEmail: 'support@quizbyte.app',
   /** URL scheme used for deep links (see app.json). */
   scheme: 'quizbyte',
+  /** The account behind the app – linked from "Mehr". */
+  tiktok: { handle: 'Informatik.Quiz', url: 'https://www.tiktok.com/@informatik.quiz' },
 } as const;

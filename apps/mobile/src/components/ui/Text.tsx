@@ -1,19 +1,20 @@
 import { Text as RNText } from 'react-native';
 import type { TextProps as RNTextProps } from 'react-native';
 
-import { colors, typography } from '@/theme';
-import type { TypographyVariant } from '@/theme';
+import { typography, useThemeColors } from '@/theme';
+import type { ThemeColors, TypographyVariant } from '@/theme';
 
 export type TextColor = 'primary' | 'secondary' | 'muted' | 'accent' | 'success' | 'danger' | 'inverse';
 
-const COLOR_MAP: Record<TextColor, string> = {
-  primary: colors.textPrimary,
-  secondary: colors.textSecondary,
-  muted: colors.textMuted,
-  accent: colors.primary,
-  success: colors.success,
-  danger: colors.danger,
-  inverse: colors.background,
+/** Which token a `color` prop maps to. Resolved per theme, not at module load. */
+const COLOR_KEYS: Record<TextColor, keyof ThemeColors> = {
+  primary: 'textPrimary',
+  secondary: 'textSecondary',
+  muted: 'textMuted',
+  accent: 'primary',
+  success: 'success',
+  danger: 'danger',
+  inverse: 'background',
 };
 
 export interface TextProps extends RNTextProps {
@@ -24,12 +25,14 @@ export interface TextProps extends RNTextProps {
 
 /** Themed text – the only place font styles are defined. */
 export function Text({ variant = 'body', color = 'primary', align, style, ...rest }: TextProps) {
+  const colors = useThemeColors();
+
   return (
     <RNText
       {...rest}
       // Dynamic type is supported but capped so layouts stay intact.
       maxFontSizeMultiplier={rest.maxFontSizeMultiplier ?? 1.3}
-      style={[typography[variant], { color: COLOR_MAP[color] }, align ? { textAlign: align } : null, style]}
+      style={[typography[variant], { color: colors[COLOR_KEYS[color]] }, align ? { textAlign: align } : null, style]}
     />
   );
 }

@@ -9,9 +9,9 @@ export const features = {
   /** Pro subscription: premium categories, paywall, "Pro verwalten" menu entries. */
   pro: false,
   /** Friends tab, add-by-username, friend profiles. */
-  friends: false,
+  friends: true,
   /** Asynchronous quiz duels between two users. */
-  duels: false,
+  duels: true,
   /** Public groups, feeds, comments – explicitly out of scope for now. */
   community: false,
   /** Daily quiz session type. */

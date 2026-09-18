@@ -14,8 +14,15 @@
   --danger-soft: rgba(239, 68, 68, 0.16);
   --warning: #f59e0b;
   --warning-soft: rgba(245, 158, 11, 0.16);
+  --info: #38bdf8;
+  --info-soft: rgba(56, 189, 248, 0.16);
   --radius: 12px;
   --radius-sm: 8px;
+  --radius-lg: 16px;
+  /* Ein einziger Schatten, überall derselbe: mehrere Tiefen nebeneinander
+     lassen eine Oberfläche unruhig wirken, ohne etwas zu ordnen. */
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.22);
+  --sidebar-width: 232px;
   color-scheme: dark;
 }
 
@@ -28,19 +35,26 @@ h2 { font-size: 16px; }
 p { margin: 0 0 8px; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--surface-2); padding: 2px 6px; border-radius: 6px; }
 
-.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
-.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px 14px; display: flex; flex-direction: column; gap: 6px; }
+.shell { display: grid; grid-template-columns: var(--sidebar-width) 1fr; min-height: 100vh; }
+/* Die Navigation bleibt stehen, während die Seite scrollt – bei neun Bereichen
+   ist der Weg zurück nach oben sonst der halbe Weg durch die Tabelle. */
+.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 14px; display: flex; flex-direction: column; gap: 2px; }
 .sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 18px; font-weight: 700; font-size: 16px; }
 .sidebar__brand span { display: inline-flex; width: 28px; height: 28px; border-radius: 8px; background: var(--primary); align-items: center; justify-content: center; font-size: 13px; }
-.sidebar__link { padding: 9px 12px; border-radius: var(--radius-sm); color: var(--text-2); display: block; }
+.sidebar__group { padding: 16px 12px 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.sidebar__link { padding: 8px 12px; border-radius: var(--radius-sm); color: var(--text-2); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sidebar__link:hover { background: var(--surface-2); color: var(--text); }
-.sidebar__link--active { background: var(--primary-soft); color: var(--text); }
+.sidebar__link--active { background: var(--primary-soft); color: var(--text); font-weight: 500; }
+/* Die Zahl offener Meldungen direkt am Menüpunkt: sie ist der einzige Grund,
+   warum man dort nachsieht, ohne dass etwas passiert ist. */
+.sidebar__count { background: var(--danger); color: #fff; border-radius: 999px; min-width: 18px; height: 18px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
 .sidebar__footer { margin-top: auto; padding: 10px 12px; color: var(--muted); font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
-.main { padding: 28px 32px; max-width: 1200px; width: 100%; }
+.main { padding: 28px 32px 64px; max-width: 1360px; width: 100%; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .page-header p { color: var(--text-2); margin: 0; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.card--flush { padding: 0; overflow: hidden; }
 .grid { display: grid; gap: 14px; }
 .grid--stats { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 .grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -106,6 +120,13 @@ td a:hover { color: var(--primary); }
 audio { width: 100%; margin-bottom: 10px; }
 .tag { display: inline-block; background: var(--surface-2); border-radius: 999px; padding: 1px 8px; margin: 0 4px 4px 0; font-size: 11px; color: var(--text-2); }
 .sticky { position: sticky; top: 20px; }
+.hint { color: var(--muted); font-size: 12px; margin: 0; }
+
+/* Lernzettel: a scrollable strip of rendered pages, plus the list thumbnail. */
+.sheet-preview { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.sheet-preview__page { height: 180px; width: auto; flex: none; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fff; }
+.sheet-thumb { display: block; width: 44px; height: 60px; object-fit: cover; object-position: top; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.cell--actions { display: flex; gap: 6px; white-space: nowrap; }
 
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }
@@ -113,4 +134,161 @@ audio { width: 100%; margin-bottom: 10px; }
   .sidebar__footer { margin-top: 0; }
   .form-layout { grid-template-columns: 1fr; }
   .main { padding: 20px 16px; }
+}
+
+/* Moderation -------------------------------------------------------------- */
+
+/* One form per button, so they are laid out rather than nested. */
+.report-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 320px; }
+.report-actions__suspend { display: flex; gap: 6px; align-items: center; }
+.report-actions__suspend .input { min-width: 200px; }
+.report-actions__error { flex-basis: 100%; margin: 4px 0 0; color: var(--danger); font-size: 12px; }
+.report-actions__done { flex-basis: 100%; margin: 4px 0 0; color: var(--success); font-size: 12px; }
+
+
+/* ==========================================================================
+   Control Center
+   Alles ab hier gehört zu den Übersichtsseiten. Die Bausteine darüber bleiben,
+   wie sie waren – die Formulare und Tabellen der Fragen- und Lernzettel-
+   verwaltung hängen daran.
+   ========================================================================== */
+
+/* --- Seitenkopf ----------------------------------------------------------- */
+.page-header h1 { margin-bottom: 4px; }
+.page-header__meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+/* Ein Abschnitt innerhalb einer Seite: Überschrift, Beiwerk, dann der Inhalt. */
+.section { margin-top: 26px; }
+.section__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.section__head h2 { margin: 0; }
+.section__head p { margin: 0; color: var(--muted); font-size: 12px; }
+
+/* --- Kennzahlen ----------------------------------------------------------- */
+.kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.kpi {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+/* Der farbige Streifen links statt einer farbigen Fläche: acht getönte Kacheln
+   nebeneinander sind ein Farbkasten, acht Streifen sind eine Legende. */
+.kpi::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent, var(--primary)); }
+.kpi--primary { --accent: var(--primary); }
+.kpi--success { --accent: var(--success); }
+.kpi--warning { --accent: var(--warning); }
+.kpi--danger { --accent: var(--danger); }
+.kpi--info { --accent: var(--info); }
+.kpi--muted { --accent: var(--muted); }
+.kpi__label { color: var(--text-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.kpi__value { font-size: 28px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; }
+.kpi__foot { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.kpi__delta { font-weight: 600; }
+.kpi__delta--up { color: var(--success); }
+.kpi__delta--down { color: var(--danger); }
+.kpi--link:hover { border-color: var(--primary); }
+
+/* --- Diagramm ------------------------------------------------------------- */
+/* Selbst gezeichnet statt mit einer Bibliothek: es sind Balken auf einer
+   Grundlinie, und eine Abhängigkeit dafür wäre mehr Code, nicht weniger. */
+.chart { display: flex; align-items: flex-end; gap: 3px; height: 180px; padding-top: 8px; }
+.chart__col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; min-width: 0; height: 100%; }
+.chart__stack { width: 100%; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+.chart__bar { width: 100%; border-radius: 3px 3px 0 0; background: var(--primary); min-height: 2px; transition: filter 0.1s; }
+.chart__bar--muted { background: var(--surface-2); border-radius: 0 0 3px 3px; }
+.chart__col:hover .chart__bar { filter: brightness(1.25); }
+.chart__label { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.chart__legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--text-2); }
+.chart__key { display: inline-flex; align-items: center; gap: 6px; }
+.chart__swatch { width: 10px; height: 10px; border-radius: 3px; background: var(--primary); }
+.chart__swatch--muted { background: var(--surface-2); }
+
+/* Ein Balken in einer Tabellenzelle – für Quoten und Anteile. */
+.meter { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+.meter__track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.meter__fill { height: 100%; border-radius: 999px; background: var(--primary); }
+.meter__value { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-2); min-width: 34px; text-align: right; }
+
+/* --- Tabellen ------------------------------------------------------------- */
+.table-wrap table { min-width: 100%; }
+thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cell--strong { font-weight: 600; }
+.cell--sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.row--danger td { background: rgba(239, 68, 68, 0.05); }
+/* Zeilen, in denen etwas offen ist: ein Streifen am linken Rand, damit man
+   sie beim Überfliegen findet, ohne die ganze Zeile einzufärben. */
+.row--flag td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+
+.grid--3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.grid--split { grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); align-items: start; }
+
+/* --- Leerer Zustand ------------------------------------------------------- */
+.empty { padding: 32px 18px; text-align: center; color: var(--muted); }
+.empty strong { display: block; color: var(--text-2); font-weight: 600; margin-bottom: 4px; }
+
+/* --- Blätterung ----------------------------------------------------------- */
+.pagination__pages { display: flex; gap: 6px; align-items: center; }
+
+/* --- Abzeichen ------------------------------------------------------------ */
+.badge--open { background: var(--warning-soft); color: var(--warning); }
+.badge--in_review { background: var(--info-soft); color: var(--info); }
+.badge--reviewed { background: var(--success-soft); color: var(--success); }
+.badge--rejected { background: var(--surface-2); color: var(--muted); }
+.badge--suspended { background: var(--danger-soft); color: var(--danger); }
+.badge--admin { background: var(--primary-soft); color: var(--primary); }
+.badge--ok { background: var(--success-soft); color: var(--success); }
+.badge--off { background: var(--surface-2); color: var(--muted); }
+
+/* --- Moderation ----------------------------------------------------------- */
+.report { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); gap: 18px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.report:last-child { border-bottom: 0; }
+.report__head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.report__subject { font-weight: 600; }
+.report__details { margin: 6px 0 0; color: var(--text-2); white-space: pre-wrap; }
+.report__meta { margin: 8px 0 0; color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.report__note { margin: 8px 0 0; padding: 8px 10px; border-left: 2px solid var(--border); color: var(--text-2); font-size: 13px; background: var(--surface-2); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.report__actions { display: flex; flex-direction: column; gap: 8px; }
+.report__actions form { display: flex; flex-wrap: wrap; gap: 6px; }
+.report__actions .input, .report__actions .textarea { flex: 1; min-width: 160px; }
+
+/* --- Detailseiten --------------------------------------------------------- */
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px 20px; }
+.detail__label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 2px; }
+.detail__value { font-size: 15px; font-weight: 500; }
+.avatar-chip { display: inline-flex; align-items: center; gap: 8px; }
+.avatar-chip__mark { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--text-2); flex: none; }
+
+/* --- Schalter ------------------------------------------------------------- */
+.flag-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.flag-row:last-child { border-bottom: 0; }
+.flag-row__text { min-width: 0; }
+.flag-row__name { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.flag-row__desc { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.flag-row__actions { display: flex; gap: 6px; align-items: center; flex: none; }
+
+/* --- Systemzustand -------------------------------------------------------- */
+.check { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.check:last-child { border-bottom: 0; }
+.check__dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--success); }
+.check__dot--warn { background: var(--warning); }
+.check__dot--bad { background: var(--danger); }
+.check__body { flex: 1; min-width: 0; }
+.check__title { font-weight: 500; }
+.check__hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+@media (max-width: 1100px) {
+  .grid--split { grid-template-columns: 1fr; }
+  .report { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  .sidebar { position: static; height: auto; }
+  .sidebar__group { padding: 10px 6px 4px; width: 100%; }
+  .kpi__value { font-size: 24px; }
 }

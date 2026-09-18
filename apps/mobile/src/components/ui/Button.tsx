@@ -1,7 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
 import type { PressableProps, StyleProp, ViewStyle } from 'react-native';
 
-import { colors, radius, spacing, touchTarget } from '@/theme';
+import { makeStyles, radius, spacing, touchTarget, useThemeColors } from '@/theme';
 
 import { Text } from './Text';
 
@@ -18,6 +18,8 @@ interface ButtonProps {
 }
 
 export function Button({ title, onPress, variant = 'primary', disabled, loading, style, accessibilityLabel }: ButtonProps) {
+  const styles = useStyles();
+  const colors = useThemeColors();
   const isDisabled = Boolean(disabled || loading);
   const textColor = variant === 'primary' || variant === 'danger' ? 'inverse' : variant === 'ghost' ? 'accent' : 'primary';
 
@@ -47,12 +49,12 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((colors, shadows, gradients) => ({
   base: {
     minHeight: touchTarget + 4,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -61,5 +63,4 @@ const styles = StyleSheet.create({
   ghost: { backgroundColor: 'transparent' },
   danger: { backgroundColor: colors.danger },
   pressed: { opacity: 0.85 },
-  disabled: { opacity: 0.5 },
-});
+  disabled: { opacity: 0.5 },}));

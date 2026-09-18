@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
-import { colors, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useThemeColors } from '@/theme';
 
-import { Card, Text } from '../ui';
+import { Text } from '../ui';
 
 interface ExplanationCardProps {
   isCorrect: boolean;
@@ -12,24 +12,57 @@ interface ExplanationCardProps {
 }
 
 export function ExplanationCard({ isCorrect, explanation, xpEarned }: ExplanationCardProps) {
+  const styles = useStyles();
+  const colors = useThemeColors();
+  const borderColor = isCorrect ? colors.success : colors.danger;
+  const bgColor = isCorrect ? colors.successSoft : colors.dangerSoft;
+
   return (
-    <Card elevated style={styles.card}>
+    <View style={[styles.card, { borderColor, backgroundColor: bgColor }]}>
       <View style={styles.header}>
-        <Ionicons name={isCorrect ? 'checkmark-circle' : 'close-circle'} size={20} color={isCorrect ? colors.success : colors.danger} />
+        <Ionicons
+          name={isCorrect ? 'checkmark-circle' : 'close-circle'}
+          size={22}
+          color={isCorrect ? colors.success : colors.danger}
+        />
         <Text variant="bodyStrong" color={isCorrect ? 'success' : 'danger'} style={styles.title}>
-          {isCorrect ? 'Richtig' : 'Leider falsch'}
+          {isCorrect ? 'Richtig!' : 'Leider falsch'}
         </Text>
-        <Text variant="label" color="accent" accessibilityLabel={`${xpEarned} XP erhalten`}>
-          +{xpEarned} XP
-        </Text>
+        {xpEarned > 0 ? (
+          <View style={styles.xpBadge}>
+            <Text variant="label" style={styles.xpText} accessibilityLabel={`${xpEarned} XP erhalten`}>
+              +{xpEarned} XP
+            </Text>
+          </View>
+        ) : null}
       </View>
-      <Text color="secondary">{explanation}</Text>
-    </Card>
+      {explanation ? (
+        <Text color="secondary" style={styles.explanation}>
+          {explanation}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: { marginTop: spacing.xl, gap: spacing.sm },
+const useStyles = makeStyles((colors, shadows, gradients) => ({
+  card: {
+    marginTop: spacing.xl,
+    padding: spacing.lg,
+    borderRadius: radius.xl,
+    borderWidth: 1.5,
+    gap: spacing.sm,
+  },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   title: { flex: 1 },
-});
+  xpBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  xpText: { color: colors.primary, fontSize: 12 },
+  explanation: { fontSize: 15, lineHeight: 22 },
+}));

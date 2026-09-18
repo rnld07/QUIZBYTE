@@ -125,14 +125,38 @@ export function QuestionForm({ question, categories }: QuestionFormProps) {
         <span className="help">Kommagetrennt, werden klein geschrieben gespeichert.</span>
       </div>
 
+      {/*
+        A new question has no id yet, so the media panel beside the form cannot
+        exist. The files ride along with the form instead and are uploaded right
+        after the question is created.
+      */}
+      {question === null ? (
+        <div className="grid grid--2">
+          <div className="field">
+            <label htmlFor="imageFile">Bild (1:1)</label>
+            <input id="imageFile" name="imageFile" type="file" className="input" accept="image/png,image/jpeg,image/webp" />
+            <p className="help">PNG, JPG oder WEBP, bis 5 MB. Optional.</p>
+            {issueFor('imageFile') ? <p className="error">{issueFor('imageFile')}</p> : null}
+          </div>
+          <div className="field">
+            <label htmlFor="audioFile">Audio</label>
+            <input id="audioFile" name="audioFile" type="file" className="input" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav" />
+            <p className="help">MP3, M4A, AAC oder WAV, bis 10 MB. Optional – lässt sich später auch generieren.</p>
+            {issueFor('audioFile') ? <p className="error">{issueFor('audioFile')}</p> : null}
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid grid--2">
         <div className="field">
           <label htmlFor="imageUrl">Bild-URL</label>
           <input id="imageUrl" name="imageUrl" className="input" defaultValue={question?.image_url ?? ''} placeholder="https://…" />
+          <p className="help">Wird beim Hochladen automatisch gesetzt.</p>
         </div>
         <div className="field">
           <label htmlFor="audioUrl">Audio-URL</label>
           <input id="audioUrl" name="audioUrl" className="input" defaultValue={question?.audio_url ?? ''} placeholder="https://…" />
+          <p className="help">Wird beim Hochladen automatisch gesetzt.</p>
         </div>
       </div>
 

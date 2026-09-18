@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createSeededRandom } from '../../utils/random';
-import { canStartSession, selectSessionQuestions } from './selection';
+import { canStartSession, preferUnseenQuestions, selectSessionQuestions } from './selection';
 
 const make = (n: number, prefix = 'q') => Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, weak: i % 2 === 0 }));
 
@@ -62,5 +62,45 @@ describe('canStartSession', () => {
   it('requires at least one question', () => {
     expect(canStartSession(0)).toBe(false);
     expect(canStartSession(1)).toBe(true);
+  });
+});
+
+describe('preferUnseenQuestions', () => {
+  const pool = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('drops questions that were already answered', () => {
+    expect(preferUnseenQuestions(pool, ['b']).map((q) => q.id)).toEqual(['a', 'c']);
+  });
+
+  it('returns the whole pool when nothing was answered yet', () => {
+    expect(preferUnseenQuestions(pool, []).map((q) => q.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('falls back to the full pool once everything has been seen', () => {
+    expect(preferUnseenQuestions(pool, ['a', 'b', 'c']).map((q) => q.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('ignores ids that are not in the pool', () => {
+    expect(preferUnseenQuestions(pool, ['x', 'a']).map((q) => q.id)).toEqual(['b', 'c']);
+  });
+
+  it('tops up with seen questions when there are not enough new ones', () => {
+    // A round that wants three cannot be cut down to the single new question.
+    expect(preferUnseenQuestions(pool, ['a', 'b'], 3).map((q) => q.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('puts the new questions first when it has to top up', () => {
+    const [first] = preferUnseenQuestions(pool, ['a', 'c'], 2);
+    expect(first?.id).toBe('b');
+  });
+
+  it('stays with the new questions alone once there are enough of them', () => {
+    expect(preferUnseenQuestions(pool, ['a'], 2).map((q) => q.id)).toEqual(['b', 'c']);
+    expect(preferUnseenQuestions(pool, [], 2).map((q) => q.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('never invents questions the pool does not have', () => {
+    expect(preferUnseenQuestions(pool, ['a', 'b', 'c'], 10)).toHaveLength(3);
+    expect(preferUnseenQuestions([], ['a'], 5)).toEqual([]);
   });
 });

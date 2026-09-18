@@ -46,15 +46,41 @@ Monorepo mit pnpm-Workspaces (`node-linker=hoisted` – die von Expo empfohlene 
 
 | Tabelle | Zweck | Schreibrechte |
 | --- | --- | --- |
-| `profiles` | Username (case-insensitiv eindeutig), Anzeigename, Avatar, Rolle | eigener Nutzer: `username`, `display_name`, `avatar_url`; Admin: alles |
+| `profiles` | Username (case-insensitiv eindeutig), Anzeigename, `avatar_config`, Rahmen, Rolle | eigener Nutzer: `username`, `display_name`, `avatar_config`; Admin: alles |
 | `categories` | Kategorien inkl. `requires_pro`, `is_active`, `sort_order`, `icon`, `accent_color` | Admin |
 | `questions` | Fragen inkl. `subcategory`, `tags[]`, `difficulty`, `image_url`, `audio_url`, `status`, `requires_pro` | Admin (Publish-Validierung per Trigger) |
-| `quiz_sessions` | Runde: Typ, Kategorie, Zähler, `completed_at` | Nutzer: insert; Abschluss über RPC |
+| `quiz_sessions` | Runde: Typ, Modus, Kategorie, Zähler, `completed_at` | Nutzer: insert; Abschluss über RPC |
 | `quiz_attempts` | Jede Antwort: Auswahl, Korrektheit, XP, Antwortzeit, lokales Datum | Nutzer: insert (Werte werden serverseitig berechnet) |
 | `user_progress` | XP, Streaks, Zähler | nur Trigger/RPC |
+| `study_sheets` | Lernzettel: PDF-URL, je Seite ein Bild, Sichtbarkeit, Sortierung | Admin; alle lesen Veröffentlichtes |
 | View `categories_overview` | Kategorien + Anzahl veröffentlichter Fragen (security_invoker) | – |
 
-Enums: `answer_key`, `difficulty_level`, `question_status` (draft/review/published/archived), `session_type` (category/random/weakness/daily/duel/exam), `user_role`.
+Enums: `answer_key`, `difficulty_level`, `question_status` (draft/review/published/archived), `session_type` (category/random/weakness/daily/duel/exam), `quiz_mode` (classic/blitz/survival/perfect), `user_role`.
+
+### Storage-Buckets
+
+| Bucket | Inhalt | Schreibrechte |
+| --- | --- | --- |
+| `question-images` | Bilder zu Fragen | Admin |
+| `question-audio` | vorgenerierte MP3s (ElevenLabs, nur serverseitig) | Admin |
+| `study-sheets` | Lernzettel: das PDF und je Seite ein gerendertes PNG | Admin |
+| `avatars` | **stillgelegt** – frühere Profilbilder; niemand schreibt oder liest sie noch | niemand (Schreibregeln wurden entfernt) |
+
+Alle Buckets sind public-read, weil die URLs direkt in `questions` bzw. `study_sheets` liegen und ohne authentifizierten Request gerendert werden.
+
+### Avatar
+
+Es gibt kein hochgeladenes Profilbild. Jeder stellt sich in `profiles.avatar_config`
+(jsonb) einen Hund oder eine Katze zusammen – Fell, Rasse, Brille, Zubehör,
+Zubehörfarbe. Der Katalog und die Normalisierung stehen in
+`packages/shared/src/domain/profile/avatar.ts`, gezeichnet wird in
+`components/ui/PetAvatar` aus einfachen Views auf einem 100×100-Raster.
+
+Die Datenbank prüft die Ids bewusst nicht: ein neuer Fellton ist damit eine
+Änderung in `packages/shared` und sonst nichts. `normalizeAvatarConfig()` beim
+Lesen fängt alles ab, was ein Client nicht kennt. Freunde und Suche liefern
+`avatar_config` mit, damit ein fremder Avatar ohne Zusatz-Request gezeichnet
+werden kann.
 
 ### RPCs
 
@@ -63,18 +89,65 @@ Enums: `answer_key`, `difficulty_level`, `question_status` (draft/review/publish
 | `get_session_questions(category_id, limit)` | invoker | zufällige veröffentlichte Fragen (RLS greift) |
 | `get_training_questions(subcategories[], tags[], category_ids[], limit)` | invoker | Fragen aus schwachen Themen |
 | `get_my_category_stats()` / `get_my_topic_stats()` | definer, nutzerbezogen | Aggregation für Fortschritt/Schwächen (zählt auch archivierte Fragen) |
+| `get_my_difficulty_stats()` | definer, nutzerbezogen | Treffer je Schwierigkeitsgrad – detaillierte Analyse |
+| `get_my_category_questions(category_id, filter)` | definer, nutzerbezogen | beantwortete Fragen einer Kategorie (nach letztem Versuch: alle/richtig/falsch) |
+| `get_my_category_difficulty_stats(category_id)` | definer, nutzerbezogen | Treffer je Schwierigkeitsgrad innerhalb einer Kategorie |
 | `complete_quiz_session(session_id)` | definer | schließt Session ab, vergibt Bonus-XP, idempotent |
 | `reset_my_progress()` | definer | löscht eigene Attempts/Sessions, setzt Progress zurück |
+| `count_my_wrong_questions()` / `get_my_wrong_questions(limit)` | invoker | falsch beantwortete Fragen ohne späteren Treffer – Basis für „Falsche Fragen wiederholen“ |
 | `is_username_available(name)` | definer | Verfügbarkeit ohne Datenleck |
 | `get_admin_dashboard_stats()` | definer, admin-only | Zähler für das Dashboard |
 | `user_has_pro()` | – | Erweiterungspunkt für Abos (aktuell `false`) |
 
 ## 4. Datenfluss einer Quiz-Session
 
-1. Nutzer tippt Kategorie → `useStartQuiz` lädt Kategorien (Cache), ruft `get_session_questions` (Pool), wählt 10 Fragen (`selectSessionQuestions`), legt `quiz_sessions` an, speichert alles im `quizSessionStore`, navigiert zu `/quiz/session`.
-2. Antwort → sofortiges UI-Feedback aus lokalen Daten (Korrektheit, XP über `xpForAnswer`), Haptik, Analytics; parallel `insert quiz_attempts` (Server berechnet Werte, aktualisiert Progress/Streak). Bei Netzfehler → Outbox.
-3. Erklärung + Weiter → nächste Frage (laufendes Audio wird gestoppt).
-4. Letzte Frage → Outbox leeren → `complete_quiz_session` → Ergebnis-Screen mit Server-Progress (Level-Up-Erkennung), Query-Invalidierung für Progress/Stats.
+1. Nutzer tippt Kategorie → `/quiz/modes` fragt nach dem Modus (siehe 4a).
+2. `useStartQuiz` lädt Kategorien (Cache), ruft `get_session_questions` (Pool), zieht so viele Fragen, wie der Modus vorsieht (`selectSessionQuestions`), legt `quiz_sessions` mit Typ **und** Modus an, speichert alles im `quizSessionStore`, navigiert zu `/quiz/session`.
+3. Antwort → sofortiges UI-Feedback aus lokalen Daten (Korrektheit, XP über `xpForAnswer`), Haptik, Analytics; parallel `insert quiz_attempts` (Server berechnet Werte, aktualisiert Progress/Streak). Bei Netzfehler → Outbox.
+4. Erklärung + Weiter → nächste Frage (laufendes Audio wird gestoppt).
+5. Rundenende → Outbox leeren → `complete_quiz_session` → Ergebnis-Screen mit Server-Progress (Level-Up-Erkennung), Query-Invalidierung für Progress/Stats.
+
+### 4a. Spielmodi
+
+`packages/shared/src/domain/quiz/modes.ts` beschreibt die vier Modi (`classic`,
+`blitz`, `survival`, `perfect`) mit Fragenzahl, Zeitlimit und Leben; `isRoundOver()`
+ist die einzige Stelle, die entscheidet, wann Schluss ist. Der Modus ändert
+nichts an den XP – nur an Länge und Ende der Runde.
+
+- Zeit läuft über `deadlineAt` im Store (absoluter Zeitstempel) und `useRoundClock`;
+  bei 0 wird die Runde abgeschlossen, bei null Antworten stattdessen verworfen.
+- Blitz und Survival ziehen bewusst mehr Fragen, als realistisch gespielt werden.
+  Deshalb kürzt `complete_quiz_session` `total_questions` auf die tatsächlich
+  beantwortete Anzahl – sonst läse das Ergebnis „4 von 30".
+- Duelle speichern ihren Modus in `duels.mode`; beide Seiten spielen denselben.
+  Die Fragenzahl je Modus steht in `duel_question_count()` und muss zu
+  `duelQuestionCount` in `packages/shared` passen.
+- Die Modusauswahl ist eine eigene Seite (`app/quiz/modes.tsx`) im selben
+  Kachelraster wie die Kategorien. Der `ModePickerDialog` bleibt als Dialog
+  bestehen, aber nur noch für die Duell-Herausforderung im Chat – dort gibt es
+  keine Seite, auf die man navigieren könnte.
+
+### Ergebnisseiten
+
+`app/quiz/result.tsx` lädt und rekonstruiert die Runde, die Darstellung kommt aus
+`components/result/ModeResults.tsx` – je Modus eine Komponente, weil jeder Modus
+eine andere Frage beantwortet: Blitz „wie viele in 60 Sekunden", Survival „wie
+weit", Perfekte Runde „ganz oder gar nicht". Das Daily Quiz hat weiterhin seine
+eigene Darstellung.
+
+Bestwerte liefert `get_my_mode_records(p_exclude_session)`. Der Parameter lässt
+die gerade gespielte Runde aussen vor – sonst wäre der eigene Lauf immer schon
+Teil des Bestwerts und „neuer Rekord" nicht von „eingestellt" zu unterscheiden.
+
+## 4b. Lernzettel
+
+Admins laden im Adminbereich ein PDF hoch. `StudySheetForm` rendert es **im
+Browser** mit pdf.js zu einem PNG je Seite und schickt PDF und Seiten zusammen an
+die Server-Action. Damit braucht weder der Server noch die App einen
+PDF-Renderer: die App zeigt die Seiten als Bilder (Vorschau auf „Mehr", alle
+Seiten im Detail) und bietet daneben zwei Wege zum Behalten – das Original-PDF
+über das System-Share-Sheet (`expo-sharing`) oder alle Seiten in die Galerie
+(`expo-media-library`).
 
 ## 5. Schwächenerkennung
 

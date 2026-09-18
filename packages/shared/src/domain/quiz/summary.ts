@@ -15,8 +15,13 @@ export interface SessionSummary {
   accuracy: number;
   /** XP from answers only (session bonus is added by the server on completion). */
   answerXp: number;
-  strongestTopic: SessionTopicResult | null;
-  weakestTopic: SessionTopicResult | null;
+  /** Every topic sharing the best accuracy of the round. */
+  strongestTopics: SessionTopicResult[];
+  /**
+   * Every topic sharing the worst accuracy – empty when nothing was actually
+   * weaker than the rest (a flawless round has no weak spot).
+   */
+  weakestTopics: SessionTopicResult[];
 }
 
 function topicLabel(question: QuizQuestion): string {
@@ -35,9 +40,12 @@ export function summarizeSession(
   const byId = new Map(questions.map((question) => [question.id, question]));
   const topics = new Map<string, SessionTopicResult>();
 
+  // A repeat is practice and counts for nothing – see AttemptResult.isRepeat.
+  const scored = attempts.filter((attempt) => !attempt.isRepeat);
+
   let correct = 0;
   let answerXp = 0;
-  for (const attempt of attempts) {
+  for (const attempt of scored) {
     if (attempt.isCorrect) correct += 1;
     answerXp += attempt.xpEarned;
     const question = byId.get(attempt.questionId);
@@ -53,17 +61,21 @@ export function summarizeSession(
     .map((topic) => ({ ...topic, accuracy: computeAccuracy(topic.correct, topic.attempts) }))
     .sort((a, b) => b.accuracy - a.accuracy || b.attempts - a.attempts || a.label.localeCompare(b.label));
 
+  // A single topic says nothing about strong or weak.
   const hasComparison = ranked.length >= 2;
-  const strongest = hasComparison ? (ranked[0] ?? null) : null;
-  const weakest = hasComparison ? (ranked[ranked.length - 1] ?? null) : null;
+  const best = ranked[0]?.accuracy ?? 0;
+  const worst = ranked[ranked.length - 1]?.accuracy ?? 0;
+  const strongestTopics = hasComparison ? ranked.filter((topic) => topic.accuracy === best) : [];
+  // When the worst topic matches the best there is no weak spot to report.
+  const weakestTopics = hasComparison && worst < best ? ranked.filter((topic) => topic.accuracy === worst) : [];
 
   return {
     totalQuestions: questions.length,
-    answered: attempts.length,
+    answered: scored.length,
     correct,
-    accuracy: computeAccuracy(correct, attempts.length),
+    accuracy: computeAccuracy(correct, scored.length),
     answerXp,
-    strongestTopic: strongest,
-    weakestTopic: weakest && weakest.label !== strongest?.label ? weakest : null,
+    strongestTopics,
+    weakestTopics,
   };
 }

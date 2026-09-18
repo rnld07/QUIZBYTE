@@ -2,26 +2,53 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 
-import { quizConfig, selectSessionQuestions } from '@quizbyte/shared';
-import type { Category, QuizQuestion, SessionType, TrainingFocus } from '@quizbyte/shared';
+import {
+  DEFAULT_QUIZ_MODE,
+  filterByDifficulty,
+  preferUnseenQuestions,
+  quizConfig,
+  quizModeById,
+  selectSessionQuestions,
+} from '@quizbyte/shared';
+import type { Category, QuizMode, QuizQuestion, SessionType, TrainingFocus } from '@quizbyte/shared';
 
 import { fetchCategories } from '@/services/api/categoriesApi';
 import { fetchProgress } from '@/services/api/progressApi';
 import { queryKeys } from '@/services/api/queryKeys';
-import { fetchSessionQuestions, fetchTrainingQuestions } from '@/services/api/questionsApi';
-import { createQuizSession } from '@/services/api/sessionsApi';
+import {
+  fetchAnswerHistory,
+  fetchDailyQuestions,
+  fetchSessionQuestions,
+  fetchTrainingQuestions,
+  fetchWrongQuestions,
+} from '@/services/api/questionsApi';
+import { fetchDuelQuestions, joinDuel } from '@/services/api/friendsApi';
+import { createQuizSession, fetchIsRepeatedDaily } from '@/services/api/sessionsApi';
 import { analytics } from '@/services/analytics/analytics';
 import { AppError, getUserMessage, logger } from '@/services/errors';
 import { useAuthStore } from '@/state/authStore';
 import { useQuizSessionStore } from '@/state/quizSessionStore';
+import { useSettingsStore } from '@/state/settingsStore';
 
 export const RANDOM_CATEGORY_NAME = 'Random';
 export const WEAKNESS_CATEGORY_NAME = 'Schwächen trainieren';
+export const MISTAKES_CATEGORY_NAME = 'Meine Fehler';
+export const DAILY_CATEGORY_NAME = 'Daily Quiz';
+export const DUEL_CATEGORY_NAME = 'Duell';
 
 export type StartQuizRequest =
-  | { type: 'category'; category: Category }
-  | { type: 'random' }
-  | { type: 'weakness'; focus: TrainingFocus };
+  /** The mode is picked before the round starts; classic when nothing is given. */
+  | { type: 'category'; category: Category; mode?: QuizMode }
+  | { type: 'random'; mode?: QuizMode }
+  /** Five random questions, double XP. Always a classic round. */
+  | { type: 'daily' }
+  /** One side of a duel: the fixed questions both players get, in their mode. */
+  | { type: 'duel'; duelId: string; mode?: QuizMode; /** Who the duel is against – lets the result find its way back to the chat. */ friendId?: string }
+  | { type: 'weakness'; focus: TrainingFocus }
+  /** Replays the questions the user answered wrong. */
+  | { type: 'mistakes' }
+  /** Replays an explicit set of questions (from the category drill-down). */
+  | { type: 'replay'; questions: QuizQuestion[]; label: string; categoryId?: string | null };
 
 interface StartQuizState {
   starting: boolean;
@@ -30,8 +57,19 @@ interface StartQuizState {
   error: string | null;
 }
 
+/** Which mode this request plays in; everything fixed runs the classic round. */
+function requestMode(request: StartQuizRequest): QuizMode {
+  if (request.type === 'category' || request.type === 'random' || request.type === 'duel') {
+    return request.mode ?? DEFAULT_QUIZ_MODE;
+  }
+  return DEFAULT_QUIZ_MODE;
+}
+
 function requestKey(request: StartQuizRequest): string {
-  return request.type === 'category' ? `category:${request.category.id}` : request.type;
+  if (request.type === 'category') return `category:${request.category.id}`;
+  if (request.type === 'replay') return `replay:${request.label}`;
+  if (request.type === 'duel') return `duel:${request.duelId}`;
+  return request.type;
 }
 
 /**
@@ -43,6 +81,11 @@ export function useStartQuiz() {
   const queryClient = useQueryClient();
   const userId = useAuthStore((state) => state.userId);
   const startSession = useQuizSessionStore((state) => state.start);
+  // Difficulty preference is applied to the freshly loaded pool.
+  // The quiz screen can change it mid-round via the session store's retune.
+  const difficulties = useSettingsStore((state) => state.difficulties);
+  // When on, category and random rounds skip everything already answered.
+  const onlyNewQuestions = useSettingsStore((state) => state.onlyNewQuestions);
   const [state, setState] = useState<StartQuizState>({ starting: false, startingKey: null, error: null });
 
   const start = useCallback(
@@ -61,24 +104,77 @@ export function useStartQuiz() {
           staleTime: 5 * 60 * 1000,
         });
         const lookup = new Map(categories.map((category) => [category.id, category]));
-        const count = quizConfig.DEFAULT_QUIZ_LENGTH;
+        // The mode decides how long the round is drawn: Blitz and Survival need
+        // a deep set, because they end on the clock or on the last life.
+        const mode = requestMode(request);
+        const modeRules = quizModeById(mode);
+        const count = modeRules.questionCount;
+
+        /**
+         * "Nur neue Fragen": unanswered questions come first.
+         *
+         * They are not the *only* ones though – the round is topped up with
+         * already-answered questions when there are not enough new ones, so a
+         * Blitz round ends on the clock and not because the category ran dry.
+         * Once enough new questions exist, the seen ones stop being reached.
+         */
+        const narrowToNew = async (candidates: QuizQuestion[]) => {
+          if (!onlyNewQuestions || candidates.length === 0) return candidates;
+          const history = await fetchAnswerHistory(userId, candidates.map((question) => question.id));
+          return preferUnseenQuestions(candidates, history.seen, count);
+        };
 
         let questions: QuizQuestion[] = [];
         let sessionType: SessionType = 'category';
         let categoryId: string | null = null;
         let categoryName = RANDOM_CATEGORY_NAME;
+        let repeatedDaily = false;
+        let duelId: string | null = null;
+        let duelFriendId: string | null = null;
+        // Kept for the difficulty setting so it can take effect mid-quiz.
+        // Stays empty for fixed sets, which must not change under the user.
+        let pool: QuizQuestion[] = [];
 
         if (request.type === 'category') {
           sessionType = 'category';
           categoryId = request.category.id;
           categoryName = request.category.name;
           analytics.track('category_viewed', { categoryId: request.category.id, categorySlug: request.category.slug });
-          const pool = await fetchSessionQuestions(categoryId, quizConfig.MAX_POOL_SIZE, lookup);
-          questions = selectSessionQuestions(pool, { count });
+          pool = await fetchSessionQuestions(categoryId, quizConfig.MAX_POOL_SIZE, lookup);
+          questions = selectSessionQuestions(await narrowToNew(filterByDifficulty(pool, difficulties)), { count });
         } else if (request.type === 'random') {
           sessionType = 'random';
-          const pool = await fetchSessionQuestions(null, quizConfig.MAX_POOL_SIZE, lookup);
-          questions = selectSessionQuestions(pool, { count });
+          pool = await fetchSessionQuestions(null, quizConfig.MAX_POOL_SIZE, lookup);
+          questions = selectSessionQuestions(await narrowToNew(filterByDifficulty(pool, difficulties)), { count });
+        } else if (request.type === 'daily') {
+          sessionType = 'daily';
+          categoryName = DAILY_CATEGORY_NAME;
+          // Fixed set for the day, already in order - no filter, no shuffle.
+          // Whether this round pays XP is decided by the server once the
+          // session exists (see below), not by a client-side guess.
+          questions = await fetchDailyQuestions(quizConfig.DAILY_QUIZ_LENGTH, lookup);
+        } else if (request.type === 'duel') {
+          // Both players get the same fixed five, in the same order.
+          sessionType = 'duel';
+          categoryName = DUEL_CATEGORY_NAME;
+          duelId = request.duelId;
+          duelFriendId = request.friendId ?? null;
+          questions = await fetchDuelQuestions(request.duelId, lookup);
+        } else if (request.type === 'replay') {
+          // The questions are already loaded – replay them in the given order.
+          sessionType = 'weakness';
+          categoryId = request.categoryId ?? null;
+          categoryName = request.label;
+          questions = request.questions.slice(0, 100);
+        } else if (request.type === 'mistakes') {
+          // Every wrong question is replayed, so the pool is used as-is.
+          sessionType = 'weakness';
+          categoryName = MISTAKES_CATEGORY_NAME;
+          questions = await fetchWrongQuestions(quizConfig.MAX_POOL_SIZE, lookup);
+          if (questions.length === 0) {
+            throw new AppError('not_found', 'Du hast aktuell keine falsch beantworteten Fragen. Stark!');
+          }
+          analytics.track('weakness_training_started', { topicCount: questions.length });
         } else {
           sessionType = 'weakness';
           categoryName = WEAKNESS_CATEGORY_NAME;
@@ -100,23 +196,46 @@ export function useStartQuiz() {
           throw new AppError('not_found', 'Für diese Kategorie sind momentan noch keine Fragen verfügbar.');
         }
 
-        const [sessionId, progress] = await Promise.all([
-          createQuizSession({ userId, categoryId, sessionType, totalQuestions: questions.length }),
+        const [sessionId, progress, history] = await Promise.all([
+          createQuizSession({ userId, categoryId, sessionType, mode, totalQuestions: questions.length }),
           queryClient.fetchQuery({ queryKey: queryKeys.progress, queryFn: () => fetchProgress(userId), staleTime: 30_000 }),
+          // Drives the "neu" / "schon beantwortet" badge and the no-XP-on-repeat rule.
+          fetchAnswerHistory(userId, questions.map((question) => question.id)),
         ]);
+
+        // Bind the fresh session to my side of the duel before the first answer
+        // lands, so the server can score it once both have played.
+        if (duelId) await joinDuel(duelId, sessionId);
+
+        // The server pays out only for the earliest daily round of the day.
+        // Asking it directly keeps the result screen in sync with the payout.
+        if (sessionType === 'daily') {
+          repeatedDaily = await fetchIsRepeatedDaily(sessionId);
+        }
 
         startSession({
           sessionId,
           sessionType,
+          mode,
           categoryId,
           categoryName,
           questions,
+          pool,
           attempts: [],
           currentIndex: 0,
+          duelFriendId,
+          duelId,
+          repeatIndices: [],
+          seenQuestionIds: history.seen,
+          masteredQuestionIds: history.mastered,
+          repeatedDaily,
+          // Set last, right before the first question appears – everything above
+          // still had to be loaded, and that time is not the player's to lose.
+          deadlineAt: modeRules.timeLimitSeconds === null ? null : Date.now() + modeRules.timeLimitSeconds * 1000,
           questionShownAt: Date.now(),
           startTotalXp: progress.totalXp,
         });
-        analytics.track('quiz_started', { sessionId, sessionType, categoryId, questionCount: questions.length });
+        analytics.track('quiz_started', { sessionId, sessionType, mode, categoryId, questionCount: questions.length });
         setState({ starting: false, startingKey: null, error: null });
         router.push('/quiz/session');
       } catch (error) {
@@ -124,7 +243,7 @@ export function useStartQuiz() {
         setState({ starting: false, startingKey: null, error: getUserMessage(error) });
       }
     },
-    [queryClient, router, startSession, state.starting, userId],
+    [difficulties, onlyNewQuestions, queryClient, router, startSession, state.starting, userId],
   );
 
   const clearError = useCallback(() => setState((previous) => ({ ...previous, error: null })), []);

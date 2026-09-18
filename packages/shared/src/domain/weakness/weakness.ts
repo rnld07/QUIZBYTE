@@ -35,6 +35,34 @@ function toInsight(stat: TopicStat): TopicInsight {
   return { ...stat, accuracy: computeAccuracy(stat.correct, stat.attempts) };
 }
 
+/** Most specific first – a category label beats the tag that repeats it. */
+const KIND_RANK: Record<TopicStat['kind'], number> = { category: 0, subcategory: 1, tag: 2 };
+
+/**
+ * Drops topics that only repeat another one under a different kind.
+ *
+ * A category "Netzwerke" and a tag "netzwerke" describe the same thing to the
+ * user, so listing both looks like a bug. Entries are compared on the trimmed,
+ * lower-cased label; the one with the most evidence wins, ties go to the
+ * category over the subcategory over the tag.
+ */
+export function dedupeByLabel(topics: TopicInsight[]): TopicInsight[] {
+  const best = new Map<string, TopicInsight>();
+
+  for (const topic of topics) {
+    const key = topic.label.trim().toLowerCase();
+    const current = best.get(key);
+    if (!current) {
+      best.set(key, topic);
+      continue;
+    }
+    const better = topic.attempts > current.attempts || (topic.attempts === current.attempts && KIND_RANK[topic.kind] < KIND_RANK[current.kind]);
+    if (better) best.set(key, topic);
+  }
+
+  return [...best.values()];
+}
+
 /**
  * Default weakness detector.
  *
@@ -50,9 +78,9 @@ export const detectWeaknesses: WeaknessDetector = (stats, options = {}) => {
   const maxTopics = options.maxTopics ?? weaknessConfig.MAX_TOPICS;
   const kinds = options.kinds;
 
-  const judged = stats
-    .filter((stat) => stat.attempts >= minAttempts && (!kinds || kinds.includes(stat.kind)))
-    .map(toInsight);
+  const judged = dedupeByLabel(
+    stats.filter((stat) => stat.attempts >= minAttempts && (!kinds || kinds.includes(stat.kind))).map(toInsight),
+  );
 
   const weaknesses = judged
     .filter((topic) => topic.accuracy < weaknessThreshold)

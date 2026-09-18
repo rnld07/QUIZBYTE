@@ -38,3 +38,29 @@ export function addDays(value: string, days: number): string {
   const date = new Date(Date.UTC(year, month - 1, day + days));
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 }
+
+/**
+ * German relative time label for an ISO timestamp, e.g. "vor 5 Min.".
+ * Falls back to a `DD.MM.YYYY` date once the timestamp is older than a week.
+ */
+export function formatRelativeTime(isoTimestamp: string, now: Date = new Date()): string {
+  const then = new Date(isoTimestamp);
+  const thenMs = then.getTime();
+  if (!Number.isFinite(thenMs)) return '';
+
+  const diffSeconds = Math.floor((now.getTime() - thenMs) / 1000);
+  // Clock skew between device and server must never render as "in der Zukunft".
+  if (diffSeconds < 60) return 'gerade eben';
+
+  const minutes = Math.floor(diffSeconds / 60);
+  if (minutes < 60) return `vor ${minutes} Min.`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `vor ${hours} Std.`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'gestern';
+  if (days < 7) return `vor ${days} Tagen`;
+
+  return `${pad(then.getDate())}.${pad(then.getMonth() + 1)}.${then.getFullYear()}`;
+}

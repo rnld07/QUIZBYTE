@@ -1,67 +1,41 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
-import type { ColorValue } from 'react-native';
+import { Tabs } from 'expo-router/js-tabs';
 
-import { features } from '@quizbyte/shared';
-
-import { colors } from '@/theme';
-
-type IoniconName = keyof typeof Ionicons.glyphMap;
-
-interface TabIconProps {
-  name: IoniconName;
-  focusedName: IoniconName;
-  color: ColorValue;
-  focused: boolean;
-  size: number;
-}
-
-function TabIcon({ name, focusedName, color, focused, size }: TabIconProps) {
-  return <Ionicons name={focused ? focusedName : name} size={size} color={color} />;
-}
+import { FloatingTabBar } from '@/components/layout/FloatingTabBar';
+import { useFeature } from '@/state/featureStore';
+import { useThemeColors } from '@/theme';
 
 export default function TabLayout() {
+  const colors = useThemeColors();
+  /*
+    Aus dem Store, nicht direkt aus `features.ts`: der Wert kann serverseitig
+    überschrieben sein. Der Store startet mit dem Code-Standard, deshalb steht
+    er beim ersten Rendern schon fest und der Tab flackert nicht.
+  */
+  const friendsEnabled = useFeature('friends');
   return (
     <Tabs
+      // The bar floats above the content – its look lives in FloatingTabBar,
+      // the routes and titles below are unchanged.
+      tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         sceneStyle: { backgroundColor: colors.background },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Quiz',
-          tabBarIcon: (props) => <TabIcon {...props} name="grid-outline" focusedName="grid" />,
-        }}
-      />
-      <Tabs.Screen
-        name="progress"
-        options={{
-          title: 'Fortschritt',
-          tabBarIcon: (props) => <TabIcon {...props} name="stats-chart-outline" focusedName="stats-chart" />,
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: 'Quiz' }} />
+      <Tabs.Screen name="progress" options={{ title: 'Fortschritt' }} />
       <Tabs.Screen
         name="friends"
         options={{
           title: 'Freunde',
-          tabBarIcon: (props) => <TabIcon {...props} name="people-outline" focusedName="people" />,
-          // Hidden until the friends feature ships (features.friends = true).
-          href: features.friends ? '/(tabs)/friends' : null,
+          // `href: null` hides the tab. Only ever pass `href` to hide something:
+          // expo-router installs its own `tabBarButton` for ANY href, and the
+          // custom bar skips every route that has one – so an explicit href
+          // would hide the tab just as effectively as `null`.
+          ...(friendsEnabled ? {} : { href: null }),
         }}
       />
-      <Tabs.Screen
-        name="more"
-        options={{
-          title: 'Mehr',
-          tabBarIcon: (props) => <TabIcon {...props} name="ellipsis-horizontal-circle-outline" focusedName="ellipsis-horizontal-circle" />,
-        }}
-      />
+      <Tabs.Screen name="more" options={{ title: 'Mehr' }} />
     </Tabs>
   );
 }

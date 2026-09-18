@@ -44,3 +44,8 @@ yarn-error.*
 *.pem
 coverage/
 .vercel
+
+# lokal, nicht geteilt
+.claude/
+# Design-Screenshots als Arbeitsmaterial – 6 MB Bilder gehören nicht in die Historie
+references/

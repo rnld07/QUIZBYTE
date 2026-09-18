@@ -1,12 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Linking, StyleSheet, View } from 'react-native';
+import { Linking, View } from 'react-native';
 
 import { Button, IconButton, Screen, Text } from '@/components/ui';
 import { appInfo } from '@/config/app';
 import { isLegalPageKey, legalPages } from '@/content/legal';
-import { spacing } from '@/theme';
+import { makeStyles, spacing } from '@/theme';
 
 export default function LegalPageScreen() {
+  const styles = useStyles();
   const router = useRouter();
   const { page } = useLocalSearchParams<{ page: string }>();
   const content = isLegalPageKey(page) ? legalPages[page] : null;
@@ -49,10 +50,9 @@ export default function LegalPageScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((colors, shadows, gradients) => ({
   topBar: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg },
   title: { flex: 1, textAlign: 'center' },
   spacer: { width: 44 },
   body: { gap: spacing.md },
-  action: { marginTop: spacing.md },
-});
+  action: { marginTop: spacing.md },}));

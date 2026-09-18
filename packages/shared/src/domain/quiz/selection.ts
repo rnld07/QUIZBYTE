@@ -68,3 +68,29 @@ export function selectSessionQuestions<T extends { id: string }>(
 export function canStartSession(availableQuestions: number): boolean {
   return availableQuestions >= quizConfig.MIN_QUESTIONS_TO_START;
 }
+
+/**
+ * Puts the questions the user has not answered yet first, then tops the list up
+ * with already-seen ones until `count` is reached.
+ *
+ * Topping up rather than cutting off: a Blitz round wants thirty questions, and
+ * a category with five unseen ones left would otherwise end after five – not
+ * because the time ran out, but because the pool did. Once enough new questions
+ * exist, the seen ones stop being reached at all and the behaviour is "only new"
+ * again without anyone changing a setting.
+ *
+ * `count` is optional so a caller that just wants the split can leave it out.
+ */
+export function preferUnseenQuestions<T extends { id: string }>(
+  pool: readonly T[],
+  seenIds: Iterable<string>,
+  count?: number,
+): T[] {
+  const seen = new Set(seenIds);
+  const unseen = pool.filter((question) => !seen.has(question.id));
+  if (count === undefined) return unseen.length > 0 ? unseen : [...pool];
+
+  const wanted = Math.max(0, Math.floor(count));
+  if (unseen.length >= wanted) return unseen;
+  return [...unseen, ...pool.filter((question) => seen.has(question.id))];
+}

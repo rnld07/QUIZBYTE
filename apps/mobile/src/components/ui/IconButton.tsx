@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable } from 'react-native';
 import type { PressableProps } from 'react-native';
 
-import { colors, radius, touchTarget } from '@/theme';
+import { makeStyles, radius, touchTarget, useThemeColors } from '@/theme';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -16,7 +16,9 @@ interface IconButtonProps {
 }
 
 /** Icon-only button with a guaranteed 44×44 touch target. */
-export function IconButton({ icon, onPress, accessibilityLabel, size = 24, color = colors.textPrimary, disabled }: IconButtonProps) {
+export function IconButton({ icon, onPress, accessibilityLabel, size = 24, color, disabled }: IconButtonProps) {
+  const styles = useStyles();
+  const colors = useThemeColors();
   return (
     <Pressable
       onPress={onPress}
@@ -26,12 +28,12 @@ export function IconButton({ icon, onPress, accessibilityLabel, size = 24, color
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [styles.base, pressed && styles.pressed, disabled && styles.disabled]}
     >
-      <Ionicons name={icon} size={size} color={color} />
+      <Ionicons name={icon} size={size} color={color ?? colors.textPrimary} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((colors, shadows, gradients) => ({
   base: {
     width: touchTarget,
     height: touchTarget,
@@ -40,5 +42,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pressed: { backgroundColor: colors.surfacePressed },
-  disabled: { opacity: 0.4 },
-});
+  disabled: { opacity: 0.4 },}));

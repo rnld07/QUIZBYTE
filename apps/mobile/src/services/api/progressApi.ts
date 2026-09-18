@@ -1,4 +1,4 @@
-import type { TopicStat, UserProgress } from '@quizbyte/shared';
+import type { Difficulty, TopicStat, UserProgress } from '@quizbyte/shared';
 
 import { toAppError } from '@/services/errors';
 import { supabase } from '@/services/supabase/client';
@@ -49,7 +49,92 @@ export async function fetchTopicStats(): Promise<TopicStat[]> {
   return (data ?? []).map(toTopicStat).filter((stat): stat is TopicStat => stat !== null);
 }
 
-export async function resetProgress(): Promise<void> {
-  const { error } = await supabase.rpc('reset_my_progress');
-  if (error) throw toAppError(error, 'Der Fortschritt konnte nicht zurückgesetzt werden.');
+
+export interface DifficultyStat {
+  difficulty: Difficulty;
+  attempts: number;
+  correct: number;
+}
+
+/** Attempts and hits per difficulty level for the current user. */
+export async function fetchDifficultyStats(): Promise<DifficultyStat[]> {
+  const { data, error } = await supabase.rpc('get_my_difficulty_stats');
+  if (error) throw toAppError(error, LOAD_ERROR);
+  return (data ?? []).map((row) => ({
+    difficulty: row.difficulty,
+    attempts: Number(row.attempts),
+    correct: Number(row.correct),
+  }));
+}
+
+/** Attempts and hits per difficulty level inside one category. */
+export async function fetchCategoryDifficultyStats(categoryId: string): Promise<DifficultyStat[]> {
+  const { data, error } = await supabase.rpc('get_my_category_difficulty_stats', { p_category_id: categoryId });
+  if (error) throw toAppError(error, LOAD_ERROR);
+  return (data ?? []).map((row) => ({
+    difficulty: row.difficulty,
+    attempts: Number(row.attempts),
+    correct: Number(row.correct),
+  }));
+}
+
+/** Completed rounds in which every question was answered correctly. */
+export async function fetchPerfectSessions(): Promise<number> {
+  const { data, error } = await supabase.rpc('count_my_perfect_sessions');
+  if (error) throw toAppError(error, 'Deine Statistik konnte nicht geladen werden.');
+  return Number(data ?? 0);
+}
+
+export interface ModeRecord {
+  rounds: number;
+  /** Most correct answers in a single round. */
+  bestCorrect: number;
+  /** Most questions answered in a single round – how far you got. */
+  bestAnswered: number;
+  /** Rounds that ran to the end with every answer right. */
+  perfectRounds: number;
+}
+
+export const EMPTY_MODE_RECORD: ModeRecord = { rounds: 0, bestCorrect: 0, bestAnswered: 0, perfectRounds: 0 };
+
+/**
+ * Personal bests per mode.
+ *
+ * `excludeSessionId` leaves the round just played out of the comparison, so the
+ * result screen can tell a new record from an equalled one.
+ */
+export async function fetchModeRecords(excludeSessionId?: string | null): Promise<Record<string, ModeRecord>> {
+  const { data, error } = await supabase.rpc('get_my_mode_records', { p_exclude_session: excludeSessionId ?? null });
+  if (error) throw toAppError(error, 'Deine Bestwerte konnten nicht geladen werden.');
+
+  const records: Record<string, ModeRecord> = {};
+  for (const row of data ?? []) {
+    records[row.mode] = {
+      rounds: row.rounds,
+      bestCorrect: row.best_correct,
+      bestAnswered: row.best_answered,
+      perfectRounds: row.perfect_rounds,
+    };
+  }
+  return records;
+}
+
+export interface AnswerStats {
+  /** Distinct questions answered – a repeat does not count again. */
+  answered: number;
+  /** How many of those were right on the first attempt. */
+  correct: number;
+}
+
+/**
+ * The headline numbers of the progress screen.
+ *
+ * Counted over first attempts only, like every other statistic: repeating a
+ * question you already know says nothing about what you know.
+ */
+export async function fetchAnswerStats(): Promise<AnswerStats> {
+  const { data, error } = await supabase.rpc('get_my_answer_stats');
+  if (error) throw toAppError(error, LOAD_ERROR);
+  const row = data?.[0];
+  return { answered: Number(row?.answered ?? 0), correct: Number(row?.correct ?? 0) };
 }

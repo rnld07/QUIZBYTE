@@ -45,7 +45,7 @@ Was der erste Milestone enthält:
 
 - Anonyme Anmeldung beim ersten Start (kein Login-Zwang), Profil + Progress werden automatisch angelegt
 - Quiz-Home mit Kategorien aus der Datenbank + virtueller Kategorie „Random“
-- Quiz-Session: 10 Fragen (konfigurierbar), Antwort → richtig/falsch → Erklärung → Weiter → Ergebnis
+- Quiz-Session: 5 Fragen (je nach Modus mehr), Antwort → richtig/falsch → Erklärung → Weiter → Ergebnis
 - Optionales 1:1-Bild und vorproduziertes Audio pro Frage (Tippen auf die Frage spielt das Audio)
 - Share-Sheet für Fragen (ohne Lösung)
 - XP, Level (steigende Kurve), Streak (lokaler Kalendertag), Accuracy, Kategorie-Performance
@@ -194,6 +194,19 @@ Das Schema wird ausschließlich über versionierte Migrationen in `packages/data
 | `…000500_progress_sessions_attempts` | `user_progress`, `quiz_sessions`, `quiz_attempts`, serverseitige Bewertung, Streak, `complete_quiz_session()`, `reset_my_progress()` |
 | `…000600_quiz_functions` | RPCs: `get_session_questions`, `get_training_questions`, `get_my_category_stats`, `get_my_topic_stats`, `get_admin_dashboard_stats` |
 | `…000700_storage` | Buckets `question-images`, `question-audio` + Policies |
+| `…000800_avatars` | Bucket `avatars` – seit `…003900_avatar_config` stillgelegt (Avatare werden gezeichnet, nicht hochgeladen) |
+| `…000900_wrong_questions` | `count_my_wrong_questions()`, `get_my_wrong_questions()` für „Schwächen trainieren“ |
+| `…001000_difficulty_stats` | `get_my_difficulty_stats()` für die detaillierte Analyse |
+| `…001100_category_questions` | `get_my_category_questions()` – Fragen hinter den Kategoriezahlen |
+| `…001200_question_difficulty` | stuft die Seed-Fragen in leicht/mittel/schwer ein |
+| `…001300_category_difficulty_stats` | `get_my_category_difficulty_stats()` je Kategorie |
+| `…001400_xp_by_difficulty` | 0 XP für falsche Antworten, 8/12/18 XP je nach Schwierigkeit |
+| `…001500_weaknesses` | `dismissed_weaknesses`, Schwächen = alles jemals Falsche |
+| `…001600_daily_quiz` | XP für die erste richtige Antwort, Daily Quiz mit doppelter XP |
+| `…001700_daily_session_lookup` | `get_my_daily_session_today()` – Ergebnisseite lädt alte Runden nach |
+| `…001800_daily_questions` | feste Tagesfragen (Wechsel 0 Uhr Europe/Berlin) |
+| `…001900_daily_xp_once` | XP im Daily Quiz nur für die erste Runde des Tages |
+| `…002000_weaknesses_exclude_daily` | Daily-Fehler zählen nicht als Schwäche |
 
 Neue Migration anlegen:
 

@@ -14,6 +14,15 @@ export interface QuestionFilters {
   image?: 'missing' | 'present' | '';
   pro?: 'yes' | 'no' | '';
   tag?: string;
+  /**
+   * Filter, die nicht in der Fragetabelle stehen.
+   *
+   * "gemeldet" und "hohe Fehlerquote" hängen an den Meldungen und an den
+   * Antworten. Sie kommen als Id-Liste aus einem eigenen RPC und werden hier
+   * als weiterer `in`-Filter angehängt – damit bleiben Blätterung und alle
+   * übrigen Filter unverändert.
+   */
+  signal?: 'reported' | 'hard' | '';
   page?: number;
 }
 
@@ -47,6 +56,7 @@ export function parseQuestionFilters(params: Record<string, string | string[] | 
   const audio = pick('audio');
   const image = pick('image');
   const pro = pick('pro');
+  const signal = pick('signal');
   const page = Number(pick('page') ?? '1');
   return {
     q: pick('q')?.trim() ?? '',
@@ -56,15 +66,28 @@ export function parseQuestionFilters(params: Record<string, string | string[] | 
     audio: audio === 'missing' || audio === 'present' ? audio : '',
     image: image === 'missing' || image === 'present' ? image : '',
     pro: pro === 'yes' || pro === 'no' ? pro : '',
+    signal: signal === 'reported' || signal === 'hard' ? signal : '',
     tag: pick('tag')?.trim().toLowerCase() ?? '',
     page: Number.isFinite(page) && page > 0 ? Math.floor(page) : 1,
   };
 }
 
-export async function listQuestions(filters: QuestionFilters): Promise<QuestionListResult> {
+/**
+ * Eine Seite der Fragenliste.
+ *
+ * `signalIds` schränkt zusätzlich auf eine Id-Liste ein – siehe `signal` oben.
+ * Eine leere Liste ist dabei ausdrücklich "kein Treffer" und nicht "kein
+ * Filter": wer nach gemeldeten Fragen sucht und keine hat, will eine leere
+ * Liste sehen, nicht alle.
+ */
+export async function listQuestions(filters: QuestionFilters, signalIds?: string[]): Promise<QuestionListResult> {
   const supabase = await createSupabaseServerClient();
   const page = filters.page ?? 1;
   const from = (page - 1) * PAGE_SIZE;
+
+  if (signalIds && signalIds.length === 0) {
+    return { rows: [], total: 0, page, pageCount: 1 };
+  }
 
   let query = supabase
     .from('questions')
@@ -86,6 +109,7 @@ export async function listQuestions(filters: QuestionFilters): Promise<QuestionL
   if (filters.pro === 'yes') query = query.eq('requires_pro', true);
   if (filters.pro === 'no') query = query.eq('requires_pro', false);
   if (filters.tag) query = query.contains('tags', [filters.tag]);
+  if (signalIds) query = query.in('id', signalIds);
 
   const { data, error, count } = await query;
   if (error) throw new Error(`Fragen konnten nicht geladen werden: ${error.message}`);

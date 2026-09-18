@@ -5,4 +5,5 @@ export { Constants } from './database.types';
 export const STORAGE_BUCKETS = {
   questionImages: 'question-images',
   questionAudio: 'question-audio',
+  studySheets: 'study-sheets',
 } as const;

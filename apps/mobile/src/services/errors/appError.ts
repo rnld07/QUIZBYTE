@@ -7,6 +7,7 @@ export type AppErrorCode =
   | 'not_found'
   | 'validation'
   | 'conflict'
+  | 'rate_limited'
   | 'unknown';
 
 /**
@@ -32,8 +33,12 @@ const USER_MESSAGES: Record<AppErrorCode, string> = {
   not_found: 'Der Inhalt wurde nicht gefunden.',
   validation: 'Die Eingabe ist ungültig.',
   conflict: 'Dieser Wert ist bereits vergeben.',
+  rate_limited: 'Zu viele Versuche. Warte einen Moment und probiere es dann erneut.',
   unknown: 'Etwas ist schiefgelaufen. Bitte versuche es erneut.',
 };
+
+const MISSING_FUNCTION_MESSAGE =
+  'Diese Funktion fehlt noch in der Datenbank. Bitte spiele die ausstehenden Migrationen ein (supabase db push).';
 
 interface PostgrestLikeError {
   code?: string;
@@ -59,6 +64,11 @@ export function toAppError(error: unknown, fallbackMessage?: string): AppError {
     const code = error.code ?? '';
     if (status === 401 || status === 403 || code === '42501' || code === 'PGRST301') {
       return new AppError('unauthorized', USER_MESSAGES.unauthorized, error);
+    }
+    // PostgREST reports an unknown function this way – almost always a
+    // migration that has not been pushed yet.
+    if (code === 'PGRST202') {
+      return new AppError('not_configured', MISSING_FUNCTION_MESSAGE, error);
     }
     if (code === 'PGRST116' || status === 404) {
       return new AppError('not_found', USER_MESSAGES.not_found, error);

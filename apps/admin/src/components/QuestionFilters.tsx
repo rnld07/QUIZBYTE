@@ -81,6 +81,16 @@ export function QuestionFilters({ filters, categories }: QuestionFiltersProps) {
         <label htmlFor="tag">Tag</label>
         <input id="tag" name="tag" className="input" defaultValue={filters.tag} placeholder="z. B. tcp" />
       </div>
+      {/* Die beiden Filter, die nicht an der Frage selbst hängen, sondern an
+          dem, was mit ihr passiert ist. */}
+      <div className="field">
+        <label htmlFor="signal">Auffälligkeit</label>
+        <select id="signal" name="signal" className="select" defaultValue={filters.signal}>
+          <option value="">Egal</option>
+          <option value="reported">gemeldet (offen)</option>
+          <option value="hard">hohe Fehlerquote</option>
+        </select>
+      </div>
       <div className="btn-row">
         <button type="submit" className="btn btn--primary">
           Filtern

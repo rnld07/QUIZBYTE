@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TopicStat } from '../../types/domain';
-import { buildTrainingFocus, detectWeaknesses, rankTopics } from './weakness';
+import { buildTrainingFocus, dedupeByLabel, detectWeaknesses, rankTopics } from './weakness';
 
 const stat = (key: string, attempts: number, correct: number, kind: TopicStat['kind'] = 'subcategory'): TopicStat => ({
   kind,
@@ -72,5 +72,37 @@ describe('buildTrainingFocus', () => {
       tags: ['TCP'],
       categoryIds: ['cat-1'],
     });
+  });
+});
+
+describe('dedupeByLabel', () => {
+  const insight = (kind: TopicStat['kind'], label: string, attempts: number, correct: number) => ({
+    kind,
+    key: `${kind}:${label}`,
+    label,
+    attempts,
+    correct,
+    accuracy: Math.round((correct / attempts) * 100),
+  });
+
+  it('keeps a category over a tag that repeats its name', () => {
+    const rows = dedupeByLabel([insight('tag', 'netzwerke', 5, 4), insight('category', 'Netzwerke', 5, 4)]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind).toBe('category');
+  });
+
+  it('compares labels case- and whitespace-insensitively', () => {
+    const rows = dedupeByLabel([insight('tag', ' Netzwerke ', 3, 1), insight('subcategory', 'netzwerke', 3, 1)]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('prefers the entry with more evidence', () => {
+    const rows = dedupeByLabel([insight('category', 'Netzwerke', 2, 1), insight('tag', 'netzwerke', 9, 5)]);
+    expect(rows[0]?.attempts).toBe(9);
+  });
+
+  it('leaves genuinely different topics alone', () => {
+    const rows = dedupeByLabel([insight('category', 'Netzwerke', 4, 2), insight('tag', 'dns', 4, 2)]);
+    expect(rows).toHaveLength(2);
   });
 });

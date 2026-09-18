@@ -4,6 +4,7 @@
  * These are intentionally decoupled from the generated database row types
  * (`@quizbyte/database`). Repositories map DB rows to these shapes.
  */
+import type { AvatarConfig } from '../domain/profile/avatar';
 
 export const ANSWER_KEYS = ['A', 'B', 'C', 'D'] as const;
 export type AnswerKey = (typeof ANSWER_KEYS)[number];
@@ -52,10 +53,14 @@ export interface Question {
   requiresPro: boolean;
 }
 
-/** A question as delivered to a quiz session (published, with its category name). */
+/** A question as delivered to a quiz session (published, with its category branding). */
 export interface QuizQuestion extends Question {
   categoryName: string;
   categorySlug: string;
+  /** Icon identifier of the category; resolved by the UI layer. */
+  categoryIcon: string | null;
+  /** Accent colour (hex) of the category. */
+  categoryAccentColor: string | null;
 }
 
 export interface UserProgress {
@@ -73,8 +78,29 @@ export interface Profile {
   id: string;
   username: string;
   displayName: string | null;
-  avatarUrl: string | null;
+  /**
+   * The drawn pet avatar – species, fur, breed and what it wears.
+   *
+   * There is no uploaded picture any more: `profiles.avatar_url` still exists in
+   * the database for the ones uploaded before, but nothing reads it.
+   */
+  avatarConfig: AvatarConfig;
+  /** Id of the equipped profile frame; null when none is worn. */
+  selectedFrame: string | null;
   role: UserRole;
+  /**
+   * When an admin suspended this account, or null while it is in good standing.
+   *
+   * The app reads it to explain why nothing works any more; the database is
+   * what actually stops the account – see `is_suspended()`.
+   */
+  suspendedAt: string | null;
+  /** What the admin wrote when suspending, if anything. */
+  suspendedReason: string | null;
+  /** Found through the user search. */
+  searchable: boolean;
+  /** Strangers may send a friend request. */
+  allowFriendRequests: boolean;
   createdAt: string;
 }
 
@@ -85,6 +111,14 @@ export interface AttemptResult {
   isCorrect: boolean;
   responseTimeMs: number;
   xpEarned: number;
+  /**
+   * A question the player asked to see again later in the same round.
+   *
+   * Practice, not an answer: it is never sent to the server, pays no XP, costs
+   * no life and counts towards nothing in the summary. Without that it would
+   * be a way to farm – answer wrong, ask for a repeat, answer right.
+   */
+  isRepeat?: boolean;
 }
 
 /** Aggregated performance for a category, subcategory or tag. */

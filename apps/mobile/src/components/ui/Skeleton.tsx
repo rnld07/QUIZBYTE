@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Animated, StyleSheet } from 'react-native';
+import { Animated } from 'react-native';
 import type { DimensionValue, StyleProp, ViewStyle } from 'react-native';
 
-import { colors, radius } from '@/theme';
+import { makeStyles, radius } from '@/theme';
 
 interface SkeletonProps {
   width?: DimensionValue;
@@ -13,6 +13,7 @@ interface SkeletonProps {
 
 /** Subtle pulsing placeholder that keeps the layout stable while loading. */
 export function Skeleton({ width = '100%', height = 16, borderRadius = radius.sm, style }: SkeletonProps) {
+  const styles = useStyles();
   const [opacity] = useState(() => new Animated.Value(0.5));
 
   useEffect(() => {
@@ -29,6 +30,5 @@ export function Skeleton({ width = '100%', height = 16, borderRadius = radius.sm
   return <Animated.View style={[styles.base, { width, height, borderRadius, opacity }, style]} />;
 }
 
-const styles = StyleSheet.create({
-  base: { backgroundColor: colors.surfaceElevated },
-});
+const useStyles = makeStyles((colors, shadows, gradients) => ({
+  base: { backgroundColor: colors.surfaceElevated },}));

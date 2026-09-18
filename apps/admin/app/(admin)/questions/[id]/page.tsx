@@ -9,11 +9,13 @@ import { getQuestion } from '@/lib/queries/questions';
 export const dynamic = 'force-dynamic';
 
 interface EditQuestionPageProps {
+  searchParams: Promise<{ media?: string }>;
   params: Promise<{ id: string }>;
 }
 
-export default async function EditQuestionPage({ params }: EditQuestionPageProps) {
+export default async function EditQuestionPage({ params, searchParams }: EditQuestionPageProps) {
   const { id } = await params;
+  const query = await searchParams;
   const [question, categories] = await Promise.all([getQuestion(id), listCategories()]);
   if (!question) notFound();
 
@@ -28,6 +30,11 @@ export default async function EditQuestionPage({ params }: EditQuestionPageProps
           </p>
         </div>
       </div>
+      {/* The question was created, only its file did not make it up. */}
+      {query.media === 'failed' ? (
+        <div className="error">Die Frage wurde gespeichert, die Datei konnte aber nicht hochgeladen werden. Versuch es rechts noch einmal.</div>
+      ) : null}
+
       <div className="form-layout">
         <QuestionForm question={question} categories={categories} />
         {/* key resets local upload state whenever the server delivers new media URLs */}

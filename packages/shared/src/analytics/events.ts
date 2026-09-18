@@ -1,3 +1,4 @@
+import type { QuizMode } from '../domain/quiz/modes';
 import type { SessionType } from '../types/domain';
 
 /**
@@ -12,6 +13,7 @@ export interface AnalyticsEventMap {
   quiz_started: {
     sessionId: string;
     sessionType: SessionType;
+    mode: QuizMode;
     categoryId: string | null;
     questionCount: number;
   };
@@ -27,6 +29,7 @@ export interface AnalyticsEventMap {
   quiz_completed: {
     sessionId: string;
     sessionType: SessionType;
+    mode: QuizMode;
     categoryId: string | null;
     totalQuestions: number;
     correctAnswers: number;
@@ -41,7 +44,12 @@ export interface AnalyticsEventMap {
   weakness_training_started: { topicCount: number };
   level_up: { fromLevel: number; toLevel: number };
   streak_extended: { currentStreak: number };
-  profile_updated: { field: 'username' | 'display_name' };
+  profile_updated: { field: 'username' | 'display_name' | 'avatar' };
+  account_created: { confirmationSent: boolean };
+  /** A leftover guest turned into a real account – same user, now with an e-mail. */
+  account_linked: { confirmationSent: boolean };
+  signed_in: Record<string, never>;
+  signed_out: Record<string, never>;
   settings_changed: { setting: string; value: string | number | boolean };
   error_shown: { code: string };
 }

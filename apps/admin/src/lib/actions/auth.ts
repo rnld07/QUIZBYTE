@@ -15,7 +15,16 @@ export async function signInAction(_previous: AuthActionState, formData: FormDat
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error || !data.user) return { error: 'Anmeldung fehlgeschlagen. Bitte prüfe deine Zugangsdaten.' };
+ // if (error || !data.user) return { error: 'Anmeldung fehlgeschlagen. Bitte prüfe deine Zugangsdaten.' };
+if (error) {
+  console.error('Supabase Login Error:', error);
+  return { error: `Supabase: ${error.message}` };
+}
+
+if (!data.user) {
+  return { error: 'Supabase hat keinen Benutzer zurückgegeben.' };
+}
+ // vorübergehend
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
   if (profile?.role !== 'admin') {

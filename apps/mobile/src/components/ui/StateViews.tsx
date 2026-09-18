@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
-import { colors, spacing } from '@/theme';
+import { makeStyles, spacing, useThemeColors } from '@/theme';
 
 import { Button } from './Button';
 import { Text } from './Text';
@@ -19,6 +19,8 @@ interface StateViewProps {
 
 /** Shared layout for empty states. */
 export function EmptyState({ icon = 'help-circle-outline', title, message, actionLabel, onAction, compact }: StateViewProps) {
+  const styles = useStyles();
+  const colors = useThemeColors();
   return (
     <View style={[styles.container, compact && styles.compact]} accessibilityRole="summary">
       <Ionicons name={icon} size={compact ? 28 : 40} color={colors.textMuted} />
@@ -55,9 +57,8 @@ export function ErrorState({ message, onRetry, compact }: ErrorStateProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((colors, shadows, gradients) => ({
   container: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.lg, gap: spacing.sm },
   compact: { paddingVertical: spacing.lg },
   title: { marginTop: spacing.sm },
-  action: { marginTop: spacing.md, alignSelf: 'stretch' },
-});
+  action: { marginTop: spacing.md, alignSelf: 'stretch' },}));

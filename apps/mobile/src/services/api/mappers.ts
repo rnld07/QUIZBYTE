@@ -1,4 +1,5 @@
 import type { Tables } from '@quizbyte/database';
+import { normalizeAvatarConfig } from '@quizbyte/shared';
 import type { Category, Profile, QuizQuestion, TopicStat, UserProgress } from '@quizbyte/shared';
 
 export function toCategory(row: Tables<'categories_overview'>): Category {
@@ -17,7 +18,7 @@ export function toCategory(row: Tables<'categories_overview'>): Category {
 }
 
 export interface CategoryLookup {
-  get(id: string): Pick<Category, 'name' | 'slug'> | undefined;
+  get(id: string): Pick<Category, 'name' | 'slug' | 'icon' | 'accentColor'> | undefined;
 }
 
 export function toQuizQuestion(row: Tables<'questions'>, categories: CategoryLookup): QuizQuestion {
@@ -27,6 +28,8 @@ export function toQuizQuestion(row: Tables<'questions'>, categories: CategoryLoo
     categoryId: row.category_id,
     categoryName: category?.name ?? 'Allgemein',
     categorySlug: category?.slug ?? 'unknown',
+    categoryIcon: category?.icon ?? null,
+    categoryAccentColor: category?.accentColor ?? null,
     subcategory: row.subcategory,
     questionText: row.question_text,
     answers: { A: row.answer_a, B: row.answer_b, C: row.answer_c, D: row.answer_d },
@@ -58,8 +61,13 @@ export function toProfile(row: Tables<'profiles'>): Profile {
     id: row.id,
     username: row.username,
     displayName: row.display_name,
-    avatarUrl: row.avatar_url,
+    avatarConfig: normalizeAvatarConfig(row.avatar_config),
+    selectedFrame: row.selected_frame,
     role: row.role,
+    suspendedAt: row.suspended_at,
+    suspendedReason: row.suspended_reason,
+    searchable: row.searchable,
+    allowFriendRequests: row.allow_friend_requests,
     createdAt: row.created_at,
   };
 }
