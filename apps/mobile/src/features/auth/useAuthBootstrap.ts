@@ -4,9 +4,10 @@ import { AppState } from 'react-native';
 import { analytics } from '@/services/analytics/analytics';
 import { accountFromUser, onAuthStateChange, restoreSession } from '@/services/auth/authService';
 import { getUserMessage, logger } from '@/services/errors';
-import { flushAttemptOutbox } from '@/services/outbox/attemptOutbox';
-import { queryClient } from '@/services/query/queryClient';
+import { flushAttemptOutbox, hydrateAttemptOutbox } from '@/services/outbox/attemptOutbox';
 import { useAuthStore } from '@/state/authStore';
+
+import { resetLocalUserState } from './resetLocalUserState';
 
 /**
  * Restores the session on launch and keeps the auth store in sync.
@@ -28,7 +29,9 @@ export function useAuthBootstrap() {
 
   const adopt = useCallback(
     (userId: string, account: ReturnType<typeof accountFromUser>) => {
-      if (cachedFor.current !== null && cachedFor.current !== userId) queryClient.clear();
+      // Ein anderes Konto: alles Lokale des vorigen geht weg, auch eine Runde,
+      // die noch im Arbeitsspeicher stand.
+      if (cachedFor.current !== null && cachedFor.current !== userId) resetLocalUserState();
       cachedFor.current = userId;
       setReady({ userId, ...account });
     },
@@ -38,6 +41,9 @@ export function useAuthBootstrap() {
   const bootstrap = useCallback(async () => {
     setLoading();
     try {
+      // Die Warteschlange zuerst: sie bringt mit, was beim letzten Mal nicht
+      // rausging, und uebernimmt dabei die Eintraege der alten Fassung.
+      await hydrateAttemptOutbox();
       const session = await restoreSession();
       if (!session) {
         setSignedOut();
@@ -46,7 +52,7 @@ export function useAuthBootstrap() {
       analytics.identify(session.user.id);
       adopt(session.user.id, accountFromUser(session.user));
       analytics.track('app_opened', {});
-      void flushAttemptOutbox();
+      void flushAttemptOutbox(session.user.id);
     } catch (error) {
       logger.error('auth bootstrap failed', error);
       setError(getUserMessage(error));
@@ -59,17 +65,17 @@ export function useAuthBootstrap() {
       if (session) {
         analytics.identify(session.user.id);
         adopt(session.user.id, accountFromUser(session.user));
-        void flushAttemptOutbox();
+        void flushAttemptOutbox(session.user.id);
         return;
       }
-      // Signed out: back to the sign-in screen, and the cache goes with it so
-      // the next person to sign in on this device sees their own data.
-      queryClient.clear();
+      // Signed out: back to the sign-in screen, and everything local goes with
+      // it so the next person to sign in on this device sees their own data.
+      resetLocalUserState();
       cachedFor.current = null;
       setSignedOut();
     });
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void flushAttemptOutbox();
+      if (state === 'active') void flushAttemptOutbox(useAuthStore.getState().userId);
     });
     return () => {
       unsubscribe();

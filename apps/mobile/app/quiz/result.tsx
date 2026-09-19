@@ -20,6 +20,11 @@ import { useModeRecords } from '@/features/quiz/useModeRecords';
 import { useStartQuiz } from '@/features/quiz/useStartQuiz';
 import { useCategories } from '@/features/quiz/useCategories';
 import { getUserMessage } from '@/services/errors';
+import {
+  selectPendingForSession,
+  selectStuckForSession,
+  useAttemptOutbox,
+} from '@/services/outbox/attemptOutbox';
 import { useAuthStore } from '@/state/authStore';
 import { useQuizSessionStore } from '@/state/quizSessionStore';
 import type { CompletedQuizSession } from '@/state/quizSessionStore';
@@ -188,6 +193,16 @@ export default function QuizResultScreen() {
         onClose={() => setWheelClosed(true)}
       />
 
+      {/*
+        Was noch unterwegs ist.
+
+        Eine Antwort gilt erst als gespeichert, wenn der Server sie bestaetigt
+        hat. Bis dahin liegt sie auf dem Geraet – das ist in Ordnung und geht
+        von allein raus, aber wer gerade offline gespielt hat, soll es wissen
+        und nicht raten muessen, ob die Runde angekommen ist.
+      */}
+      <PendingAnswersNote sessionId={result.sessionId} />
+
       {/* What the round actually asked – collapsed until someone wants it. */}
       <SessionReview sessionId={result.sessionId} questions={result.questions} attempts={result.attempts} />
 
@@ -225,6 +240,20 @@ interface DailyResultProps {
  * collected, not the level bar. A repeat earns nothing itself, so the bar then
  * shows what the first round of the day scored.
  */
+function PendingAnswersNote({ sessionId }: { sessionId: string }) {
+  const pending = useAttemptOutbox(selectPendingForSession(sessionId));
+  const stuck = useAttemptOutbox(selectStuckForSession(sessionId));
+  if (pending === 0 && stuck === 0) return null;
+
+  return (
+    <Text variant="caption" color={stuck > 0 ? 'danger' : 'muted'} align="center">
+      {stuck > 0
+        ? `${stuck} ${stuck === 1 ? 'Antwort konnte' : 'Antworten konnten'} nicht gespeichert werden. Wir versuchen es beim nächsten Start erneut.`
+        : `${pending} ${pending === 1 ? 'Antwort wird' : 'Antworten werden'} noch gespeichert – das läuft von allein weiter.`}
+    </Text>
+  );
+}
+
 function DailyResult({ result, summary, totalXp, firstRun, isRepeat }: DailyResultProps) {
   const styles = useStyles();
   const colors = useThemeColors();

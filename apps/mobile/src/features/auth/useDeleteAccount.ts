@@ -1,8 +1,11 @@
 import { useMutation } from '@tanstack/react-query';
 
 import { deleteAccount, reauthenticate } from '@/services/api/accountApi';
-import { queryClient } from '@/services/query/queryClient';
+import { forgetAttemptsOfUser } from '@/services/outbox/attemptOutbox';
 import { supabase } from '@/services/supabase/client';
+import { useAuthStore } from '@/state/authStore';
+
+import { resetLocalUserState } from './resetLocalUserState';
 
 /**
  * Deletes the account, for good.
@@ -19,13 +22,17 @@ import { supabase } from '@/services/supabase/client';
 export function useDeleteAccount() {
   return useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
+      const userId = useAuthStore.getState().userId;
       await reauthenticate(email, password);
       await deleteAccount();
 
       // The user row is gone; the local session is a key to nothing. `scope:
       // 'local'` because the server has no session left to revoke.
       await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
-      queryClient.clear();
+      resetLocalUserState();
+      // Die Warteschlange gehoert zu einem Konto, das es nicht mehr gibt.
+      // Ueberall sonst bleibt sie liegen – hier waere sie ein Versand ins Nichts.
+      if (userId) await forgetAttemptsOfUser(userId);
     },
   });
 }

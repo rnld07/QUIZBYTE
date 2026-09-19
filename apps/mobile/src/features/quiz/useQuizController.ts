@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { computeLevelProgress, summarizeSession, toLocalDateString, xpForAttempt } from '@quizbyte/shared';
 import type { AnswerKey, AttemptResult } from '@quizbyte/shared';
@@ -9,9 +9,9 @@ import { settleDuel } from '@/services/api/friendsApi';
 import { queryKeys } from '@/services/api/queryKeys';
 import { completeQuizSession, submitAttempt } from '@/services/api/sessionsApi';
 import { analytics } from '@/services/analytics/analytics';
-import { getUserMessage, isNetworkError, logger } from '@/services/errors';
+import { AppError, getUserMessage, isNetworkError, logger } from '@/services/errors';
 import { haptics } from '@/services/haptics/haptics';
-import { flushAttemptOutbox, useAttemptOutbox } from '@/services/outbox/attemptOutbox';
+import { deliverAttempt, flushAttemptOutbox } from '@/services/outbox/attemptOutbox';
 import { useAuthStore } from '@/state/authStore';
 import { roundIsOver, selectCurrentAttempt, selectCurrentQuestion, useQuizSessionStore } from '@/state/quizSessionStore';
 
@@ -46,6 +46,28 @@ export function useQuizController() {
    */
   const [pendingAnswer, setPendingAnswer] = useState<AnswerKey | null>(null);
   const [answerError, setAnswerError] = useState<string | null>(null);
+  /**
+   * Alles, was gerade zum Server unterwegs ist.
+   *
+   * Der Abschluss wartet darauf. Ohne das rechnete der Server die Runde ab,
+   * waehrend die letzte Antwort noch lief – und lehnte sie danach ab, weil die
+   * Runde bereits abgeschlossen war. Gerade die letzte Antwort ist die, auf die
+   * es ankommt.
+   */
+  const inFlight = useRef<Set<Promise<unknown>>>(new Set());
+
+  const track = useCallback(<T,>(task: Promise<T>): Promise<T> => {
+    inFlight.current.add(task);
+    void task.finally(() => inFlight.current.delete(task));
+    return task;
+  }, []);
+
+  /** Wartet, bis nichts mehr unterwegs ist – auch auf das, was dabei dazukommt. */
+  const settleInFlight = useCallback(async () => {
+    while (inFlight.current.size > 0) {
+      await Promise.allSettled([...inFlight.current]);
+    }
+  }, []);
 
   const answer = useCallback(
     (selected: AnswerKey) => {
@@ -78,7 +100,9 @@ export function useQuizController() {
       if (session.sessionType === 'duel' && !isRepeat) {
         setPendingAnswer(selected);
         setAnswerError(null);
-        submitAttempt(input)
+        track(
+          submitAttempt(input),
+        )
           .then((stored) => {
             revealSolution(question.id, stored.correctAnswer, stored.explanation);
             recordAttempt({
@@ -138,17 +162,22 @@ export function useQuizController() {
 
       if (isRepeat) return;
 
-      submitAttempt(input)
-        .then((stored) => settleAttemptXp(stored.questionId, stored.xpEarned))
-        .catch((error: unknown) => {
-          if (isNetworkError(error)) {
-            useAttemptOutbox.getState().enqueue(input);
-          } else {
-            logger.error('submit attempt failed', error);
-          }
-        });
+      /*
+        Erst speichern, dann senden.
+
+        `deliverAttempt` legt die Antwort dauerhaft ab und loest erst danach den
+        Versand aus. Frueher stand es andersherum: gesendet wurde sofort, und
+        nur ein Netzfehler brachte die Antwort in die Warteschlange. Ein
+        Serverfehler oder ein Beenden der App im falschen Moment liess sie
+        verschwinden.
+      */
+      void track(
+        deliverAttempt(input).then((stored) => {
+          if (stored) settleAttemptXp(stored.questionId, stored.xpEarned);
+        }),
+      );
     },
-    [attempt, pendingAnswer, question, recordAttempt, revealSolution, session, settleAttemptXp, userId],
+    [attempt, pendingAnswer, question, recordAttempt, revealSolution, session, settleAttemptXp, track, userId],
   );
 
   const finish = useCallback(async () => {
@@ -156,9 +185,11 @@ export function useQuizController() {
     setFinishing(true);
     setFinishError(null);
     try {
-      const delivered = await flushAttemptOutbox();
+      // Erst alles abwarten, was noch unterwegs ist, dann die Warteschlange.
+      await settleInFlight();
+      const delivered = await flushAttemptOutbox(userId);
       if (!delivered) {
-        throw new Error('Network request failed');
+        throw new AppError('network', 'Keine Verbindung. Deine Antworten sind gespeichert und gehen später raus.');
       }
       const result = await completeQuizSession(session.sessionId);
       const summary = summarizeSession(session.questions, session.attempts);
@@ -213,7 +244,7 @@ export function useQuizController() {
     } finally {
       setFinishing(false);
     }
-  }, [complete, finishing, queryClient, router, session]);
+  }, [complete, finishing, queryClient, router, session, settleInFlight, userId]);
 
   /**
    * Drops the running round without navigating anywhere.
@@ -231,12 +262,14 @@ export function useQuizController() {
       questionIndex: session.currentIndex,
       answeredQuestions: session.attempts.length,
     });
-    void flushAttemptOutbox();
+    // Auch beim Verlassen: was noch laeuft, darf zu Ende laufen, und was
+    // liegengeblieben ist, bekommt einen Versuch.
+    void settleInFlight().then(() => flushAttemptOutbox(userId));
     void queryClient.invalidateQueries({ queryKey: queryKeys.progress });
     void queryClient.invalidateQueries({ queryKey: ['stats'] });
     void queryClient.invalidateQueries({ queryKey: ['activity'] });
     abandon();
-  }, [abandon, queryClient, session]);
+  }, [abandon, queryClient, session, settleInFlight, userId]);
 
   const leave = useCallback(() => {
     // Back to where the round was started from: training, replays and the saved
