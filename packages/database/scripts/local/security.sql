@@ -611,6 +611,234 @@ begin
 end $$;
 
 
+-- 14. The other round types, too ------------------------------------------------
+select public.__act_reset();
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000005');
+
+do $$
+declare
+  v_payload jsonb;
+  v_session uuid;
+  v_outsider uuid;
+  v_blocked boolean := false;
+begin
+  v_payload := public.start_quiz_round('category', 'classic', 2, '1f000000-0000-4000-8000-000000000001');
+  v_session := (v_payload ->> 'session_id')::uuid;
+  insert into public.__ids values ('category_round', v_session);
+
+  assert (select question_set_enforced from public.quiz_sessions where id = v_session),
+    'a category round carries its set too';
+  assert (select session_type from public.quiz_sessions where id = v_session) = 'category',
+    'and the type the client asked for';
+  assert jsonb_array_length(v_payload -> 'questions') > 0, 'with questions in it';
+
+  select q.id into v_outsider
+  from public.questions q
+  where q.status = 'published'
+    and not exists (
+      select 1 from public.quiz_session_questions sq
+      where sq.quiz_session_id = v_session and sq.question_id = q.id
+    )
+  limit 1;
+
+  begin
+    perform public.submit_attempt(v_session, v_outsider, 'A');
+  exception when check_violation then v_blocked := true;
+  end;
+  assert v_blocked, 'a question outside a category round is rejected as well';
+end $$;
+
+-- Die Schwierigkeit ist eine Auswahl, kein Vorschlag.
+do $$
+declare v_payload jsonb; v_session uuid;
+begin
+  v_payload := public.start_quiz_round(
+    'category', 'classic', 1, '1f000000-0000-4000-8000-000000000001', array['hard']::public.difficulty_level[]);
+  v_session := (v_payload ->> 'session_id')::uuid;
+
+  assert not exists (
+    select 1
+    from public.quiz_session_questions sq
+    join public.questions q on q.id = sq.question_id
+    where sq.quiz_session_id = v_session and q.difficulty <> 'hard'
+  ), 'a round asked for hard questions contains only hard ones';
+end $$;
+
+-- Eine Wiederholung nimmt nur, was dem Nutzer gehoert.
+do $$
+declare
+  v_foreign uuid;
+  v_mine uuid;
+  v_payload jsonb;
+  v_blocked boolean := false;
+begin
+  select id into v_mine from public.__ids where key = 'daily_q1';
+
+  select q.id into v_foreign
+  from public.questions q
+  where q.status = 'published'
+    and not exists (select 1 from public.quiz_attempts a where a.question_id = q.id and a.user_id = auth.uid())
+    and not exists (select 1 from public.saved_questions s where s.question_id = q.id and s.user_id = auth.uid())
+  limit 1;
+
+  -- Nur eine fremde Frage: daraus wird gar keine Runde.
+  begin
+    perform public.start_quiz_round(
+      'weakness', 'classic', 5, null, null, false, '{}', '{}', '{}', array[v_foreign]);
+  exception when no_data_found then v_blocked := true;
+  end;
+  assert v_blocked, 'a replay of a question never touched does not start';
+
+  -- Mit einer eigenen dazwischen bleibt genau die eigene uebrig.
+  v_payload := public.start_quiz_round(
+    'weakness', 'classic', 5, null, null, false, '{}', '{}', '{}', array[v_foreign, v_mine]);
+  assert jsonb_array_length(v_payload -> 'questions') = 1, 'the foreign id is dropped, the own one stays';
+  assert (v_payload -> 'questions' -> 0 ->> 'id')::uuid = v_mine, 'and it is the right one';
+end $$;
+
+-- Eine gespeicherte Frage darf wiederholt werden, auch ungespielt.
+do $$
+declare v_saved uuid; v_payload jsonb;
+begin
+  select q.id into v_saved
+  from public.questions q
+  where q.status = 'published'
+    and not exists (select 1 from public.quiz_attempts a where a.question_id = q.id and a.user_id = auth.uid())
+  limit 1;
+
+  insert into public.saved_questions (user_id, question_id) values (auth.uid(), v_saved)
+  on conflict do nothing;
+
+  v_payload := public.start_quiz_round(
+    'weakness', 'classic', 5, null, null, false, '{}', '{}', '{}', array[v_saved]);
+  assert jsonb_array_length(v_payload -> 'questions') = 1, 'a saved question can be replayed';
+end $$;
+
+
+-- 15. Changing the difficulty mid-round ------------------------------------------
+do $$
+declare
+  v_session uuid;
+  v_first uuid;
+  v_replaced uuid;
+  v_payload jsonb;
+  v_blocked boolean := false;
+begin
+  select id into v_session from public.__ids where key = 'category_round';
+
+  -- Eine Frage beantworten, damit es etwas zu behalten gibt.
+  select sq.question_id into v_first
+  from public.quiz_session_questions sq
+  where sq.quiz_session_id = v_session order by sq.sort_position limit 1;
+  perform public.submit_attempt(v_session, v_first, 'A');
+
+  -- Die zweite Frage ist die, die getauscht werden kann.
+  select sq.question_id into v_replaced
+  from public.quiz_session_questions sq
+  where sq.quiz_session_id = v_session and sq.sort_position = 2;
+
+  v_payload := public.retune_quiz_round(v_session, array['hard']::public.difficulty_level[]);
+
+  assert (select question_id from public.quiz_session_questions
+          where quiz_session_id = v_session and sort_position = 1) = v_first,
+    'the answered question keeps its place';
+
+  if v_replaced is not null
+     and not exists (select 1 from public.quiz_session_questions
+                     where quiz_session_id = v_session and question_id = v_replaced) then
+    -- Was aus der Runde geflogen ist, wird als Antwort abgewiesen.
+    begin
+      perform public.submit_attempt(v_session, v_replaced, 'A');
+    exception when check_violation then v_blocked := true;
+    end;
+    assert v_blocked, 'a question swapped out is no longer part of the round';
+  end if;
+
+  assert jsonb_array_length(v_payload -> 'questions') > 0, 'and the round still has questions';
+end $$;
+
+-- Ein Tagesquiz laesst sich nicht umstellen: sein Satz steht.
+do $$
+declare v_blocked boolean := false;
+begin
+  begin
+    perform public.retune_quiz_round(
+      (select id from public.__ids where key = 'daily_a'), array['easy']::public.difficulty_level[]);
+  exception when check_violation then v_blocked := true;
+  end;
+  assert v_blocked, 'the daily round keeps its questions';
+end $$;
+
+
+-- 16. A duel question stays out of every solo round -----------------------------
+-- Der Kern der Sache: solange Duell- und Solo-Fragen aus demselben Bestand
+-- kommen, laesst sich die Loesung ueber eine Solo-Runde einsammeln. Eine Frage
+-- im Duellbestand darf deshalb auf keinem Solo-Weg auftauchen.
+select public.__act_reset();
+
+update public.questions set duel_pool = true where id = '2f000000-0000-4000-8000-000000000003';
+
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000005');
+
+do $$
+declare
+  v_duel_question uuid := '2f000000-0000-4000-8000-000000000003';
+  v_blocked boolean;
+  v_payload jsonb;
+begin
+  assert not exists (
+    select 1 from public.get_session_questions('1f000000-0000-4000-8000-000000000001', 100) q
+    where q.id = v_duel_question
+  ), 'a duel question is not drawn for a category round';
+
+  assert not exists (
+    select 1 from public.get_training_questions(array['Smoke'], '{}', '{}', 100) q
+    where q.id = v_duel_question
+  ), 'nor for training';
+
+  assert not exists (
+    select 1 from public.get_daily_questions(50) q where q.id = v_duel_question
+  ), 'nor for the daily quiz';
+
+  -- Auch nicht ueber den Umweg: speichern und als Wiederholung anfordern.
+  insert into public.saved_questions (user_id, question_id) values (auth.uid(), v_duel_question)
+  on conflict do nothing;
+
+  assert not exists (
+    select 1 from public.get_my_saved_questions(100) q where q.id = v_duel_question
+  ), 'nor in the saved list';
+
+  v_blocked := false;
+  begin
+    perform public.start_quiz_round(
+      'weakness', 'classic', 5, null, null, false, '{}', '{}', '{}', array[v_duel_question]);
+  exception when no_data_found then v_blocked := true;
+  end;
+  assert v_blocked, 'and a replay of it does not start either';
+
+  -- Und im Chat ist sie nicht teilbar.
+  v_blocked := false;
+  begin
+    perform public.send_question_to_friend('bbbbbbbb-0000-4000-8000-000000000006', v_duel_question);
+  exception when foreign_key_violation then v_blocked := true;
+  end;
+  assert v_blocked, 'and it cannot be shared in a chat';
+
+  -- Die uebrigen Runden laufen weiter: ein Bestand, der noch zu klein ist,
+  -- darf das Spiel nicht anhalten.
+  v_payload := public.start_quiz_round('random', 'classic', 3);
+  assert jsonb_array_length(v_payload -> 'questions') > 0, 'an ordinary round still starts';
+end $$;
+
+select public.__act_reset();
+
+do $$
+begin
+  assert public.duel_pool_size() < public.duel_pool_minimum(),
+    'with one marked question the pool is still below the minimum';
+end $$;
+
+
 select public.__act_reset();
 drop table public.__ids;
 drop function public.__act_as(uuid, text);

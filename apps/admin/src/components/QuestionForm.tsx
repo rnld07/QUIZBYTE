@@ -165,6 +165,15 @@ export function QuestionForm({ question, categories }: QuestionFormProps) {
         <label htmlFor="requiresPro">Pro erforderlich</label>
       </div>
 
+      <div className="field field--inline">
+        <input id="duelPool" name="duelPool" type="checkbox" defaultChecked={question?.duel_pool ?? false} />
+        <label htmlFor="duelPool">Nur für Duelle</label>
+        <p className="help">
+          Kommt in keiner Solo-Runde vor – auch nicht im Tagesquiz, im Training oder als geteilte Frage. Nur so bleibt
+          ihre Lösung bis zur Abgabe beim Server. Der Schutz greift, sobald genug Fragen so markiert sind.
+        </p>
+      </div>
+
       <div className="btn-row" style={{ marginTop: 8 }}>
         {intentButton('save', 'Speichern', 'btn--primary')}
         {status !== 'draft' ? intentButton('draft', 'Als Entwurf', '') : null}

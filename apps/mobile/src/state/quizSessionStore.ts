@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
-import { isRoundOver, livesLeft, retuneSessionQuestions } from '@quizbyte/shared';
-import type { AnswerKey, AttemptResult, Difficulty, QuizMode, QuizQuestion, SessionType } from '@quizbyte/shared';
+import { isRoundOver, livesLeft } from '@quizbyte/shared';
+import type { AnswerKey, AttemptResult, QuizMode, QuizQuestion, SessionType } from '@quizbyte/shared';
 
 export interface ActiveQuizSession {
   sessionId: string;
@@ -12,11 +12,13 @@ export interface ActiveQuizSession {
   categoryName: string;
   questions: QuizQuestion[];
   /**
-   * Everything this round could have drawn from, unfiltered. Lets the
-   * difficulty setting take effect mid-quiz without another request. Empty for
-   * fixed sets (daily, replays, weakness training), which must not change.
+   * Whether the difficulty setting may still re-draw this round.
+   *
+   * True for category and random rounds; the server swaps the unanswered tail
+   * on request. False for everything with a fixed set - daily, duel, replays -
+   * where a swap would not be a setting but a different round.
    */
-  pool: QuizQuestion[];
+  retunable: boolean;
   attempts: AttemptResult[];
   currentIndex: number;
   /** Timestamp when the current question was shown (for response time). */
@@ -76,8 +78,14 @@ interface QuizSessionState {
   /** Queues the question on screen to be asked once more at the end of the round. */
   repeatLater: () => void;
   next: () => void;
-  /** Re-draws the unanswered part of the round for new difficulties. */
-  retune: (difficulties: readonly Difficulty[]) => void;
+  /**
+   * Takes over a round the server re-drew.
+   *
+   * Only the state change lives here; asking for the new set is the job of
+   * `useRetuneRound` – a store that talks to the network would drag the whole
+   * Supabase client into every test that touches a round.
+   */
+  replaceQuestions: (questions: QuizQuestion[]) => void;
   complete: (totalXpAfter: number, completionBonusXp: number) => void;
   abandon: () => void;
 }
@@ -118,13 +126,7 @@ export const useQuizSessionStore = create<QuizSessionState>()((set, get) => ({
       question.id === questionId
         ? { ...question, correctAnswer, explanation: explanation || question.explanation }
         : question;
-    set({
-      active: {
-        ...active,
-        questions: active.questions.map(patch),
-        pool: active.pool.map(patch),
-      },
-    });
+    set({ active: { ...active, questions: active.questions.map(patch) } });
   },
   /*
     The same question again at the end of the round.
@@ -151,23 +153,10 @@ export const useQuizSessionStore = create<QuizSessionState>()((set, get) => ({
     if (!active) return;
     set({ active: { ...active, currentIndex: active.currentIndex + 1, questionShownAt: Date.now() } });
   },
-  retune: (difficulties) => {
+  replaceQuestions: (questions) => {
     const active = get().active;
-    if (!active || active.pool.length === 0) return;
-    // A queued repeat sits at the end of the list, which is exactly the part a
-    // re-draw would replace. Leave the round alone rather than lose it.
-    if (active.repeatIndices.length > 0) return;
-
-    // Answered questions stay put, including one the user is currently reading
-    // the explanation for – its attempt is already on the server.
-    const answered = new Set(active.attempts.map((attempt) => attempt.questionId));
-    let keepCount = 0;
-    while (keepCount < active.questions.length && answered.has(active.questions[keepCount]?.id ?? '')) keepCount += 1;
-    keepCount = Math.max(keepCount, active.currentIndex + (answered.has(active.questions[active.currentIndex]?.id ?? '') ? 1 : 0));
-
-    const questions = retuneSessionQuestions({ questions: active.questions, pool: active.pool, keepCount, difficulties });
+    if (!active || questions.length === 0) return;
     if (questions.every((question, index) => question.id === active.questions[index]?.id)) return;
-
     // The question on screen may be a different one now – restart its timer.
     set({ active: { ...active, questions, questionShownAt: Date.now() } });
   },

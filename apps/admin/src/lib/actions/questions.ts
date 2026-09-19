@@ -43,6 +43,7 @@ function readForm(formData: FormData) {
     imageUrl: text('imageUrl'),
     audioUrl: text('audioUrl'),
     requiresPro: formData.get('requiresPro') === 'on',
+    duelPool: formData.get('duelPool') === 'on',
     currentStatus: text('currentStatus') as Enums<'question_status'>,
   };
 }
@@ -97,6 +98,7 @@ export async function saveQuestionAction(
     audio_url: form.audioUrl.trim() || null,
     status: nextStatus,
     requires_pro: form.requiresPro,
+    duel_pool: form.duelPool,
   };
 
   // Files picked while creating the question. Checked before anything is

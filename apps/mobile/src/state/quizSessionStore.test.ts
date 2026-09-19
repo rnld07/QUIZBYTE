@@ -32,7 +32,7 @@ const session = (overrides: Partial<ActiveQuizSession> = {}): ActiveQuizSession 
   categoryId: 'cat',
   categoryName: 'Netzwerke',
   questions: [question('q1'), question('q2')],
-  pool: [],
+  retunable: false,
   attempts: [],
   currentIndex: 0,
   duelFriendId: null,

@@ -2,26 +2,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 
-import {
-  DEFAULT_QUIZ_MODE,
-  filterByDifficulty,
-  preferUnseenQuestions,
-  quizConfig,
-  quizModeById,
-  selectSessionQuestions,
-} from '@quizbyte/shared';
+import { DEFAULT_QUIZ_MODE, quizConfig, quizModeById } from '@quizbyte/shared';
 import type { Category, QuizMode, QuizQuestion, SessionType, TrainingFocus } from '@quizbyte/shared';
 
 import { fetchCategories } from '@/services/api/categoriesApi';
 import { fetchProgress } from '@/services/api/progressApi';
 import { queryKeys } from '@/services/api/queryKeys';
-import {
-  fetchAnswerHistory,
-  fetchSessionQuestions,
-  fetchTrainingQuestions,
-  fetchWrongQuestions,
-} from '@/services/api/questionsApi';
-import { createQuizSession, fetchIsRepeatedDaily, startDailyRound, startDuelRound } from '@/services/api/sessionsApi';
+import { fetchAnswerHistory, fetchWrongQuestions } from '@/services/api/questionsApi';
+import { fetchIsRepeatedDaily, startDailyRound, startDuelRound, startQuizRound } from '@/services/api/sessionsApi';
 import type { StartedRound } from '@/services/api/sessionsApi';
 import { analytics } from '@/services/analytics/analytics';
 import { AppError, getUserMessage, logger } from '@/services/errors';
@@ -109,20 +97,6 @@ export function useStartQuiz() {
         const modeRules = quizModeById(mode);
         const count = modeRules.questionCount;
 
-        /**
-         * "Nur neue Fragen": unanswered questions come first.
-         *
-         * They are not the *only* ones though – the round is topped up with
-         * already-answered questions when there are not enough new ones, so a
-         * Blitz round ends on the clock and not because the category ran dry.
-         * Once enough new questions exist, the seen ones stop being reached.
-         */
-        const narrowToNew = async (candidates: QuizQuestion[]) => {
-          if (!onlyNewQuestions || candidates.length === 0) return candidates;
-          const history = await fetchAnswerHistory(userId, candidates.map((question) => question.id));
-          return preferUnseenQuestions(candidates, history.seen, count);
-        };
-
         let questions: QuizQuestion[] = [];
         let sessionType: SessionType = 'category';
         let categoryId: string | null = null;
@@ -139,21 +113,28 @@ export function useStartQuiz() {
           war die Runde das, was der Client behauptete.
         */
         let startedRound: StartedRound | null = null;
-        // Kept for the difficulty setting so it can take effect mid-quiz.
-        // Stays empty for fixed sets, which must not change under the user.
-        let pool: QuizQuestion[] = [];
+        /** Whether the difficulty setting can still re-draw this round mid-quiz. */
+        let retunable = false;
 
         if (request.type === 'category') {
           sessionType = 'category';
           categoryId = request.category.id;
           categoryName = request.category.name;
           analytics.track('category_viewed', { categoryId: request.category.id, categorySlug: request.category.slug });
-          pool = await fetchSessionQuestions(categoryId, quizConfig.MAX_POOL_SIZE, lookup);
-          questions = selectSessionQuestions(await narrowToNew(filterByDifficulty(pool, difficulties)), { count });
+          startedRound = await startQuizRound(
+            { type: 'category', mode, count, categoryId, difficulties, onlyNew: onlyNewQuestions },
+            lookup,
+          );
+          questions = startedRound.questions;
+          retunable = true;
         } else if (request.type === 'random') {
           sessionType = 'random';
-          pool = await fetchSessionQuestions(null, quizConfig.MAX_POOL_SIZE, lookup);
-          questions = selectSessionQuestions(await narrowToNew(filterByDifficulty(pool, difficulties)), { count });
+          startedRound = await startQuizRound(
+            { type: 'random', mode, count, difficulties, onlyNew: onlyNewQuestions },
+            lookup,
+          );
+          questions = startedRound.questions;
+          retunable = true;
         } else if (request.type === 'daily') {
           sessionType = 'daily';
           categoryName = DAILY_CATEGORY_NAME;
@@ -172,45 +153,62 @@ export function useStartQuiz() {
           startedRound = await startDuelRound(request.duelId, lookup);
           questions = startedRound.questions;
         } else if (request.type === 'replay') {
-          // The questions are already loaded – replay them in the given order.
+          /*
+            Die Fragen liegen schon vor – der Server bekommt ihre Ids und prueft
+            jede einzeln: veroeffentlicht, aktive Kategorie, und vom Nutzer
+            selbst schon einmal beantwortet oder gespeichert. Was durchfaellt,
+            faellt aus der Runde; die Reihenfolge bleibt.
+          */
           sessionType = 'weakness';
           categoryId = request.categoryId ?? null;
           categoryName = request.label;
-          questions = request.questions.slice(0, 100);
+          startedRound = await startQuizRound(
+            {
+              type: 'weakness',
+              mode,
+              count: request.questions.length,
+              categoryId,
+              questionIds: request.questions.map((question) => question.id),
+            },
+            lookup,
+          );
+          questions = startedRound.questions;
         } else if (request.type === 'mistakes') {
-          // Every wrong question is replayed, so the pool is used as-is.
+          // Every wrong question is replayed, so the list is used as-is.
           sessionType = 'weakness';
           categoryName = MISTAKES_CATEGORY_NAME;
-          questions = await fetchWrongQuestions(quizConfig.MAX_POOL_SIZE, lookup);
-          if (questions.length === 0) {
+          const wrong = await fetchWrongQuestions(quizConfig.MAX_POOL_SIZE, lookup);
+          if (wrong.length === 0) {
             throw new AppError('not_found', 'Du hast aktuell keine falsch beantworteten Fragen. Stark!');
           }
+          startedRound = await startQuizRound(
+            { type: 'weakness', mode, count: wrong.length, questionIds: wrong.map((question) => question.id) },
+            lookup,
+          );
+          questions = startedRound.questions;
           analytics.track('weakness_training_started', { topicCount: questions.length });
         } else {
           sessionType = 'weakness';
           categoryName = WEAKNESS_CATEGORY_NAME;
-          const [preferred, filler] = await Promise.all([
-            fetchTrainingQuestions(request.focus, quizConfig.MAX_POOL_SIZE, lookup),
-            fetchSessionQuestions(null, quizConfig.MAX_POOL_SIZE, lookup),
-          ]);
-          const preferredIds = new Set(preferred.map((question) => question.id));
-          questions = selectSessionQuestions([...preferred, ...filler], {
-            count,
-            isPreferred: (question) => preferredIds.has(question.id),
-          });
+          startedRound = await startQuizRound(
+            { type: 'weakness', mode, count, focus: request.focus, difficulties, onlyNew: onlyNewQuestions },
+            lookup,
+          );
+          questions = startedRound.questions;
           analytics.track('weakness_training_started', {
             topicCount: request.focus.subcategories.length + request.focus.tags.length + request.focus.categoryIds.length,
           });
         }
 
-        if (questions.length === 0) {
+        // Jede Rundenart beginnt inzwischen auf dem Server. Bleibt hier etwas
+        // leer, ist die Runde nicht zustande gekommen – und ohne Fragen gibt es
+        // nichts zu spielen.
+        if (!startedRound || questions.length === 0) {
           throw new AppError('not_found', 'Für diese Kategorie sind momentan noch keine Fragen verfügbar.');
         }
 
-        const [sessionId, progress, history] = await Promise.all([
-          startedRound
-            ? Promise.resolve(startedRound.sessionId)
-            : createQuizSession({ userId, categoryId, sessionType, mode, totalQuestions: questions.length }),
+        const sessionId = startedRound.sessionId;
+        const [progress, history] = await Promise.all([
           queryClient.fetchQuery({ queryKey: queryKeys.progress, queryFn: () => fetchProgress(userId), staleTime: 30_000 }),
           // Drives the "neu" / "schon beantwortet" badge and the no-XP-on-repeat rule.
           fetchAnswerHistory(userId, questions.map((question) => question.id)),
@@ -234,7 +232,7 @@ export function useStartQuiz() {
           categoryId,
           categoryName,
           questions,
-          pool,
+          retunable,
           attempts: [],
           currentIndex: 0,
           duelFriendId,

@@ -1,4 +1,13 @@
-import type { AnswerKey, AttemptResult, QuizMode, QuizQuestion, SessionType, UserProgress } from '@quizbyte/shared';
+import type {
+  AnswerKey,
+  AttemptResult,
+  Difficulty,
+  QuizMode,
+  QuizQuestion,
+  SessionType,
+  TrainingFocus,
+  UserProgress,
+} from '@quizbyte/shared';
 import type { CompletedQuizSession } from '@/state/quizSessionStore';
 import type { Tables } from '@quizbyte/database';
 
@@ -22,15 +31,6 @@ const SESSION_TYPE_NAMES: Record<SessionType, string> = {
   duel: 'Duell',
   exam: 'Prüfung',
 };
-
-export interface CreateSessionInput {
-  userId: string;
-  categoryId: string | null;
-  sessionType: SessionType;
-  /** How the round is played; the server stores it with the session. */
-  mode: QuizMode;
-  totalQuestions: number;
-}
 
 /** What a server-started round hands back: the round and the questions it consists of. */
 export interface StartedRound {
@@ -81,20 +81,67 @@ export async function startDuelRound(duelId: string, categories: CategoryLookup)
   return toStartedRound(data, categories);
 }
 
-export async function createQuizSession(input: CreateSessionInput): Promise<string> {
-  const { data, error } = await supabase
-    .from('quiz_sessions')
-    .insert({
-      user_id: input.userId,
-      category_id: input.categoryId,
-      session_type: input.sessionType,
-      mode: input.mode,
-      total_questions: input.totalQuestions,
-    })
-    .select('id')
-    .single();
+/** What the client may ask for when the server draws the round. */
+export interface StartRoundRequest {
+  /** 'weakness' covers training, the mistake replay and every other replay. */
+  type: Extract<SessionType, 'category' | 'random' | 'weakness'>;
+  mode: QuizMode;
+  count: number;
+  categoryId?: string | null;
+  /** Empty means "all" – the same neutral state the setting has. */
+  difficulties?: readonly Difficulty[];
+  onlyNew?: boolean;
+  /** Weak topics, for training rounds. */
+  focus?: TrainingFocus;
+  /**
+   * An explicit set, for replays. The server takes only what the user has
+   * answered or saved before - otherwise this would be the comfortable way to
+   * ask for the solution of any question by id.
+   */
+  questionIds?: string[];
+}
+
+/**
+ * Starts a category, random, weakness or replay round on the server.
+ *
+ * The wish stays with the client, the decision moves to the server: it applies
+ * the difficulty filter, the "only new questions" preference and the share of
+ * weak-topic questions itself, and writes down what it drew. An answer to
+ * anything outside that set is refused from here on.
+ */
+export async function startQuizRound(request: StartRoundRequest, categories: CategoryLookup): Promise<StartedRound> {
+  const { data, error } = await supabase.rpc('start_quiz_round', {
+    p_type: request.type,
+    p_mode: request.mode,
+    p_count: request.count,
+    p_category_id: request.categoryId ?? null,
+    p_difficulties: request.difficulties && request.difficulties.length > 0 ? [...request.difficulties] : null,
+    p_only_new: request.onlyNew ?? false,
+    p_subcategories: request.focus?.subcategories ?? [],
+    p_tags: request.focus?.tags ?? [],
+    p_category_ids: request.focus?.categoryIds ?? [],
+    p_question_ids: request.questionIds ?? null,
+  });
   if (error) throw toAppError(error, 'Das Quiz konnte nicht gestartet werden. Bitte versuche es erneut.');
-  return data.id;
+  return toStartedRound(data, categories);
+}
+
+/**
+ * Re-draws the unanswered part of a running round for new difficulties.
+ *
+ * Server-side, because the round's question set is: answered questions keep
+ * their place, the rest is drawn again, and the set is rewritten in the same
+ * breath. Returns the whole round, in order.
+ */
+export async function retuneQuizRound(sessionId: string, difficulties: readonly Difficulty[]): Promise<StartedRound> {
+  const list = await fetchCategories();
+  const lookup = new Map(list.map((entry) => [entry.id, entry]));
+  const { data, error } = await supabase.rpc('retune_quiz_round', {
+    p_session_id: sessionId,
+    p_difficulties: difficulties.length > 0 ? [...difficulties] : null,
+  });
+  if (error) throw toAppError(error, 'Die Schwierigkeit konnte nicht umgestellt werden.');
+  return toStartedRound(data, lookup);
 }
 
 export interface SubmitAttemptInput {
@@ -250,7 +297,7 @@ export async function restoreCompletedSession(sessionId: string, userId: string)
     categoryName: (session.category_id ? lookup.get(session.category_id)?.name : null) ?? SESSION_TYPE_NAMES[session.session_type],
     questions,
     // A finished round is read-only: nothing can be re-drawn any more.
-    pool: [],
+    retunable: false,
     attempts,
     currentIndex: Math.max(0, questions.length - 1),
     questionShownAt: Date.now(),

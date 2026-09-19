@@ -398,6 +398,7 @@ export type Database = {
           audio_url: string | null;
           status: Database['public']['Enums']['question_status'];
           requires_pro: boolean;
+          duel_pool: boolean;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -420,6 +421,7 @@ export type Database = {
           audio_url?: string | null;
           status?: Database['public']['Enums']['question_status'];
           requires_pro?: boolean;
+          duel_pool?: boolean;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -442,6 +444,7 @@ export type Database = {
           audio_url?: string | null;
           status?: Database['public']['Enums']['question_status'];
           requires_pro?: boolean;
+          duel_pool?: boolean;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -695,6 +698,14 @@ export type Database = {
       create_duel: {
         Args: { p_friend_id: string; p_mode?: Database['public']['Enums']['quiz_mode'] };
         Returns: string;
+      };
+      duel_pool_size: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
+      duel_pool_minimum: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
       };
       duel_question_count: {
         Args: { p_mode: Database['public']['Enums']['quiz_mode'] };
@@ -1292,6 +1303,28 @@ export type Database = {
       is_username_available: {
         Args: { p_username: string };
         Returns: boolean;
+      };
+      start_quiz_round: {
+        Args: {
+          p_type: Database['public']['Enums']['session_type'];
+          p_mode?: Database['public']['Enums']['quiz_mode'];
+          p_count?: number;
+          p_category_id?: string | null;
+          p_difficulties?: Database['public']['Enums']['difficulty_level'][] | null;
+          p_only_new?: boolean;
+          p_subcategories?: string[];
+          p_tags?: string[];
+          p_category_ids?: string[];
+          p_question_ids?: string[] | null;
+        };
+        Returns: Json;
+      };
+      retune_quiz_round: {
+        Args: {
+          p_session_id: string;
+          p_difficulties?: Database['public']['Enums']['difficulty_level'][] | null;
+        };
+        Returns: Json;
       };
       start_daily_round: {
         Args: Record<PropertyKey, never>;

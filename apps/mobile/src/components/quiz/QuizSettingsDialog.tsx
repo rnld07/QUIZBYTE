@@ -5,6 +5,7 @@ import { Modal, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import type { Difficulty } from '@quizbyte/shared';
 
+import { useRetuneRound } from '@/features/quiz/useRetuneRound';
 import { analytics } from '@/services/analytics/analytics';
 import { useQuizSessionStore } from '@/state/quizSessionStore';
 import { useSettingsStore } from '@/state/settingsStore';
@@ -30,10 +31,10 @@ function QuizSettingsDialogBody({ visible, onClose }: QuizSettingsDialogProps) {
   const setDifficulties = useSettingsStore((state) => state.setDifficulties);
   const onlyNewQuestions = useSettingsStore((state) => state.onlyNewQuestions);
   const setOnlyNewQuestions = useSettingsStore((state) => state.setOnlyNewQuestions);
-  const retune = useQuizSessionStore((state) => state.retune);
-  // Only sessions with a pool behind them can be re-drawn; the daily quiz and
-  // replays are fixed sets.
-  const retunes = useQuizSessionStore((state) => (state.active?.pool.length ?? 0) > 0);
+  const { retune } = useRetuneRound();
+  // Nur Kategorie- und Zufallsrunden lassen sich neu ziehen; Daily, Duell und
+  // Wiederholungen haben einen festen Fragensatz.
+  const retunes = useQuizSessionStore((state) => state.active?.retunable ?? false);
   const [xpInfo, setXpInfo] = useState(false);
 
   /**
@@ -42,7 +43,7 @@ function QuizSettingsDialogBody({ visible, onClose }: QuizSettingsDialogProps) {
    */
   const changeDifficulties = (value: Difficulty[]) => {
     setDifficulties(value);
-    retune(value);
+    void retune(value);
     analytics.track('settings_changed', { setting: 'difficulty', value: value.length === 0 ? 'all' : value.join('+') });
   };
 
