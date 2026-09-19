@@ -101,10 +101,18 @@ function SharedQuestion({ contentScheme }: { contentScheme: ColorScheme }) {
 
   const state = (key: AnswerKey): AnswerOptionState => {
     if (!given) return 'default';
+    // Die Loesung kommt erst mit der Abgabe – bis sie da ist, steht die
+    // getippte Antwort auf "wird geprueft" statt auf "falsch".
+    if (!question.correctAnswer) return key === given ? 'pending' : 'muted';
     if (key === question.correctAnswer) return 'correct';
     if (key === given) return 'wrong';
     return 'muted';
   };
+
+  // Ob es richtig war, sagt der Server; das steht an der Nachricht. Der
+  // Vergleich ist nur der Rueckfall fuer eine Antwort, die gerade erst getippt
+  // wurde und deren Nachricht noch nicht neu geladen ist.
+  const wasCorrect = message.answer?.isCorrect ?? (given !== null && given === question.correctAnswer);
 
   const answer = (key: AnswerKey) => {
     if (given) return;
@@ -144,7 +152,7 @@ function SharedQuestion({ contentScheme }: { contentScheme: ColorScheme }) {
         {/* No XP here – a question from a friend is not a round, and paying for
             it would make the chat a way to farm levels. */}
         {given && question.explanation ? (
-          <ExplanationCard isCorrect={given === question.correctAnswer} explanation={question.explanation} xpEarned={0} />
+          <ExplanationCard isCorrect={wasCorrect} explanation={question.explanation} xpEarned={0} />
         ) : null}
       </FixedTheme>
 

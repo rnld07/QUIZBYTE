@@ -30,23 +30,86 @@ export function useQuizController() {
   const attempt = useQuizSessionStore(selectCurrentAttempt);
   const recordAttempt = useQuizSessionStore((state) => state.recordAttempt);
   const settleAttemptXp = useQuizSessionStore((state) => state.settleAttemptXp);
+  const revealSolution = useQuizSessionStore((state) => state.revealSolution);
   const repeatLater = useQuizSessionStore((state) => state.repeatLater);
   const next = useQuizSessionStore((state) => state.next);
   const complete = useQuizSessionStore((state) => state.complete);
   const abandon = useQuizSessionStore((state) => state.abandon);
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+  /**
+   * The answer a duel is currently waiting on.
+   *
+   * A duel round arrives without its solutions, so nothing can be shown until
+   * the server has answered. Everywhere else the answer is acknowledged at once
+   * and the server only corrects the XP.
+   */
+  const [pendingAnswer, setPendingAnswer] = useState<AnswerKey | null>(null);
+  const [answerError, setAnswerError] = useState<string | null>(null);
 
   const answer = useCallback(
     (selected: AnswerKey) => {
-      if (!session || !question || attempt || !userId) return;
+      if (!session || !question || attempt || !userId || pendingAnswer) return;
 
-      const isCorrect = selected === question.correctAnswer;
       const responseTimeMs = Math.max(0, Date.now() - session.questionShownAt);
       // Practice, asked for with "Später wiederholen": it is not sent, pays
       // nothing and counts for nothing. The server would refuse it anyway –
       // a question can be answered only once per session.
       const isRepeat = session.repeatIndices.includes(session.currentIndex);
+      const input = {
+        userId,
+        sessionId: session.sessionId,
+        questionId: question.id,
+        selectedAnswer: selected,
+        responseTimeMs,
+        answeredOn: toLocalDateString(),
+      };
+
+      /*
+        Duell: erst der Server, dann die Anzeige.
+
+        Die Frage kam ohne Loesung – wer im Duell antwortet, erfaehrt vom Server,
+        ob es richtig war, und nicht vom eigenen Geraet. Das kostet den Moment
+        zwischen Tippen und Antwort, und genau den macht der Wartezustand an der
+        Antwort sichtbar. Eine Verbindung ist dafuer noetig; in die
+        Offline-Warteschlange darf eine Duellantwort nicht, sonst antwortet
+        jemand ins Leere und erfaehrt nie, wie es ausging.
+      */
+      if (session.sessionType === 'duel' && !isRepeat) {
+        setPendingAnswer(selected);
+        setAnswerError(null);
+        submitAttempt(input)
+          .then((stored) => {
+            revealSolution(question.id, stored.correctAnswer, stored.explanation);
+            recordAttempt({
+              questionId: question.id,
+              selectedAnswer: selected,
+              isCorrect: stored.isCorrect,
+              responseTimeMs,
+              xpEarned: stored.xpEarned,
+            });
+            void (stored.isCorrect ? haptics.correct() : haptics.wrong());
+            analytics.track('question_answered', {
+              sessionId: session.sessionId,
+              questionId: question.id,
+              questionIndex: session.currentIndex,
+              isCorrect: stored.isCorrect,
+              responseTimeMs,
+            });
+          })
+          .catch((error: unknown) => {
+            logger.error('submit duel attempt failed', error);
+            setAnswerError(
+              isNetworkError(error)
+                ? 'Für ein Duell brauchst du eine Verbindung. Tippe die Antwort noch einmal an.'
+                : getUserMessage(error, 'Die Antwort kam nicht an. Tippe sie noch einmal an.'),
+            );
+          })
+          .finally(() => setPendingAnswer(null));
+        return;
+      }
+
+      const isCorrect = selected === question.correctAnswer;
       const optimistic: AttemptResult = {
         questionId: question.id,
         selectedAnswer: selected,
@@ -75,14 +138,6 @@ export function useQuizController() {
 
       if (isRepeat) return;
 
-      const input = {
-        userId,
-        sessionId: session.sessionId,
-        questionId: question.id,
-        selectedAnswer: selected,
-        responseTimeMs,
-        answeredOn: toLocalDateString(),
-      };
       submitAttempt(input)
         .then((stored) => settleAttemptXp(stored.questionId, stored.xpEarned))
         .catch((error: unknown) => {
@@ -93,7 +148,7 @@ export function useQuizController() {
           }
         });
     },
-    [attempt, question, recordAttempt, session, settleAttemptXp, userId],
+    [attempt, pendingAnswer, question, recordAttempt, revealSolution, session, settleAttemptXp, userId],
   );
 
   const finish = useCallback(async () => {
@@ -237,6 +292,10 @@ export function useQuizController() {
     remainingMs,
     finishing,
     finishError,
+    /** The duel answer on its way to the server; nothing else can be tapped meanwhile. */
+    pendingAnswer,
+    /** Why the last answer did not reach the server. Only a duel can get here. */
+    answerError,
     answer,
     continueOrFinish,
     repeatCurrentLater,

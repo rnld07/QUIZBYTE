@@ -21,7 +21,16 @@ export interface CategoryLookup {
   get(id: string): Pick<Category, 'name' | 'slug' | 'icon' | 'accentColor'> | undefined;
 }
 
-export function toQuizQuestion(row: Tables<'questions'>, categories: CategoryLookup): QuizQuestion {
+/**
+ * A question row as it may arrive: complete from the table, or without the
+ * solution when the server withholds it (duel rounds, unanswered shared
+ * questions).
+ */
+export type QuestionRow = Omit<Tables<'questions'>, 'correct_answer'> & {
+  correct_answer?: Tables<'questions'>['correct_answer'] | null;
+};
+
+export function toQuizQuestion(row: QuestionRow, categories: CategoryLookup): QuizQuestion {
   const category = categories.get(row.category_id);
   return {
     id: row.id,
@@ -33,7 +42,7 @@ export function toQuizQuestion(row: Tables<'questions'>, categories: CategoryLoo
     subcategory: row.subcategory,
     questionText: row.question_text,
     answers: { A: row.answer_a, B: row.answer_b, C: row.answer_c, D: row.answer_d },
-    correctAnswer: row.correct_answer,
+    correctAnswer: row.correct_answer ?? null,
     explanation: row.explanation,
     difficulty: row.difficulty,
     tags: row.tags,

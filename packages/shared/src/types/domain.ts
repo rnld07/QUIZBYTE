@@ -53,8 +53,17 @@ export interface Question {
   requiresPro: boolean;
 }
 
-/** A question as delivered to a quiz session (published, with its category branding). */
-export interface QuizQuestion extends Question {
+/**
+ * A question as delivered to a quiz session (published, with its category branding).
+ *
+ * `correctAnswer` is nullable here and not on {@link Question}: the editorial
+ * question always has a solution, but what reaches a player need not carry it.
+ * In a duel it does not – the verdict comes from the server once the answer is
+ * in – and a shared question in the chat only reveals it after it was answered.
+ */
+export interface QuizQuestion extends Omit<Question, 'correctAnswer'> {
+  /** null when the server withholds the solution until the answer is given. */
+  correctAnswer: AnswerKey | null;
   categoryName: string;
   categorySlug: string;
   /** Icon identifier of the category; resolved by the UI layer. */

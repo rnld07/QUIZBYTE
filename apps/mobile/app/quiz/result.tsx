@@ -233,8 +233,17 @@ function DailyResult({ result, summary, totalXp, firstRun, isRepeat }: DailyResu
   // they are left out of the maximum – otherwise a perfect round still reads
   // as "100 of 144 XP".
   const roundMax = achievableXpForSession(result.questions, result.sessionType, result.attempts);
-  const dailyXp = isRepeat ? (firstRun?.xpEarned ?? 0) : totalXp;
-  const maxXp = isRepeat ? (firstRun?.maxXp ?? roundMax) : roundMax;
+  /*
+    Immer diese Runde, auch bei einer Wiederholung.
+
+    Frueher zahlte am Tag genau eine Runde, und eine Wiederholung endete
+    zwangslaeufig bei 0 – deshalb stand hier das Ergebnis des ersten Durchlaufs.
+    Seit 20260919008100 wird pro *Frage* abgerechnet: wer die erste Runde
+    abbricht, bekommt die uebrigen Fragen in der zweiten noch bezahlt. Das
+    Ergebnis dieser Runde ist damit wieder das, was die Runde eingebracht hat.
+  */
+  const dailyXp = totalXp;
+  const maxXp = roundMax;
 
   return (
     <>
@@ -247,7 +256,7 @@ function DailyResult({ result, summary, totalXp, firstRun, isRepeat }: DailyResu
 
       <Card elevated style={styles.dailyCard}>
         <View style={styles.dailyRow}>
-          <Text variant="bodyStrong">{isRepeat ? 'Dein Durchlauf von heute' : 'XP aus dieser Runde'}</Text>
+          <Text variant="bodyStrong">XP aus dieser Runde</Text>
           <Text variant="caption" color="secondary">
             {dailyXp} / {maxXp} XP
           </Text>
@@ -257,11 +266,12 @@ function DailyResult({ result, summary, totalXp, firstRun, isRepeat }: DailyResu
         {/* Green: this bar is XP collected, not progress towards a level. */}
         {maxXp > 0 ? <ProgressBar value={(dailyXp / maxXp) * 100} height={8} color={colors.success} /> : null}
 
-        {/* On a repeat the hero shows the round just played – the score of the
-            round that counted belongs here, otherwise it is nowhere. */}
+        {/* Der erste Durchlauf des Tages steht daneben: er ist nicht mehr "der
+            eine, der zaehlt", aber er ist die Runde, gegen die man sich
+            vergleicht. */}
         {isRepeat && firstRun ? (
           <Text variant="bodyStrong">
-            {firstRun.correct} von {firstRun.answered} richtig
+            Erster Durchlauf heute: {firstRun.correct} von {firstRun.answered} richtig
           </Text>
         ) : null}
 
@@ -269,7 +279,7 @@ function DailyResult({ result, summary, totalXp, firstRun, isRepeat }: DailyResu
           {maxXp === 0
             ? 'Diese Fragen hattest du alle schon einmal richtig – deshalb war heute nichts mehr zu holen. Um 0 Uhr warten neue.'
             : isRepeat
-              ? 'Heute schon gespielt. Eine Wiederholung bringt keine weiteren XP.'
+              ? 'Heute schon gespielt. XP gibt es nur noch für Fragen, die heute offen geblieben sind.'
               : dailyXp >= maxXp
                 ? 'Volle Punktzahl – mehr war heute nicht drin.'
                 : `${maxXp - dailyXp} XP sind dir heute entgangen.`}

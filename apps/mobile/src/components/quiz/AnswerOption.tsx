@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 
 import type { AnswerKey } from '@quizbyte/shared';
 
@@ -7,7 +7,12 @@ import { makeStyles, radius, spacing, useThemeColors } from '@/theme';
 
 import { Text } from '../ui';
 
-export type AnswerOptionState = 'default' | 'correct' | 'wrong' | 'muted';
+/**
+ * 'pending' is the duel case: the answer is on its way to the server and only
+ * it can say whether it was right. Without it the option would stay untouched
+ * and the round would look as if the tap had been swallowed.
+ */
+export type AnswerOptionState = 'default' | 'correct' | 'wrong' | 'muted' | 'pending';
 
 interface AnswerOptionProps {
   /** The stored key – what gets submitted, wherever the option is shown. */
@@ -31,10 +36,11 @@ export function AnswerOption({ answerKey, label, text, state, disabled, onPress 
   const isCorrect = state === 'correct';
   const isWrong = state === 'wrong';
   const isMuted = state === 'muted';
+  const isPending = state === 'pending';
 
   const icon = isCorrect ? 'checkmark-circle' : isWrong ? 'close-circle' : null;
   const iconColor = isCorrect ? colors.success : colors.danger;
-  const stateLabel = isCorrect ? 'richtig' : isWrong ? 'falsch' : undefined;
+  const stateLabel = isCorrect ? 'richtig' : isWrong ? 'falsch' : isPending ? 'wird geprüft' : undefined;
 
   return (
     <Pressable
@@ -79,8 +85,9 @@ export function AnswerOption({ answerKey, label, text, state, disabled, onPress 
         {text}
       </Text>
 
-      {/* Correct / wrong icon */}
+      {/* Correct / wrong icon – or the wait for the server in a duel */}
       {icon ? <Ionicons name={icon} size={22} color={iconColor} /> : null}
+      {isPending ? <ActivityIndicator size="small" color={colors.textMuted} /> : null}
     </Pressable>
   );
 }

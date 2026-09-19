@@ -66,6 +66,13 @@ interface QuizSessionState {
   recordAttempt: (attempt: AttemptResult) => void;
   /** Replaces the guessed XP of an answer with what the server actually paid. */
   settleAttemptXp: (questionId: string, xpEarned: number) => void;
+  /**
+   * Fills in a solution the round did not come with.
+   *
+   * Duel questions arrive without it – the verdict is the server's – and the
+   * explanation card and the review screen need it once the answer is in.
+   */
+  revealSolution: (questionId: string, correctAnswer: AnswerKey | null, explanation: string) => void;
   /** Queues the question on screen to be asked once more at the end of the round. */
   repeatLater: () => void;
   next: () => void;
@@ -101,6 +108,21 @@ export const useQuizSessionStore = create<QuizSessionState>()((set, get) => ({
       active: {
         ...active,
         attempts: active.attempts.map((entry) => (entry.questionId === questionId ? { ...entry, xpEarned } : entry)),
+      },
+    });
+  },
+  revealSolution: (questionId, correctAnswer, explanation) => {
+    const active = get().active;
+    if (!active || !correctAnswer) return;
+    const patch = (question: QuizQuestion): QuizQuestion =>
+      question.id === questionId
+        ? { ...question, correctAnswer, explanation: explanation || question.explanation }
+        : question;
+    set({
+      active: {
+        ...active,
+        questions: active.questions.map(patch),
+        pool: active.pool.map(patch),
       },
     });
   },

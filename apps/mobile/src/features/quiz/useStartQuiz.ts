@@ -17,13 +17,12 @@ import { fetchProgress } from '@/services/api/progressApi';
 import { queryKeys } from '@/services/api/queryKeys';
 import {
   fetchAnswerHistory,
-  fetchDailyQuestions,
   fetchSessionQuestions,
   fetchTrainingQuestions,
   fetchWrongQuestions,
 } from '@/services/api/questionsApi';
-import { fetchDuelQuestions, joinDuel } from '@/services/api/friendsApi';
-import { createQuizSession, fetchIsRepeatedDaily } from '@/services/api/sessionsApi';
+import { createQuizSession, fetchIsRepeatedDaily, startDailyRound, startDuelRound } from '@/services/api/sessionsApi';
+import type { StartedRound } from '@/services/api/sessionsApi';
 import { analytics } from '@/services/analytics/analytics';
 import { AppError, getUserMessage, logger } from '@/services/errors';
 import { useAuthStore } from '@/state/authStore';
@@ -131,6 +130,15 @@ export function useStartQuiz() {
         let repeatedDaily = false;
         let duelId: string | null = null;
         let duelFriendId: string | null = null;
+        /*
+          Gesetzt, wenn der Server die Runde angelegt hat.
+
+          Daily und Duell entstehen seit 20260919008200 dort: der Server sucht
+          die Fragen aus, haelt sie als Fragenset fest und gibt beides zurueck.
+          Damit ist eine Antwort auf etwas anderes nicht mehr moeglich – vorher
+          war die Runde das, was der Client behauptete.
+        */
+        let startedRound: StartedRound | null = null;
         // Kept for the difficulty setting so it can take effect mid-quiz.
         // Stays empty for fixed sets, which must not change under the user.
         let pool: QuizQuestion[] = [];
@@ -150,16 +158,19 @@ export function useStartQuiz() {
           sessionType = 'daily';
           categoryName = DAILY_CATEGORY_NAME;
           // Fixed set for the day, already in order - no filter, no shuffle.
-          // Whether this round pays XP is decided by the server once the
-          // session exists (see below), not by a client-side guess.
-          questions = await fetchDailyQuestions(quizConfig.DAILY_QUIZ_LENGTH, lookup);
+          // Round and questions come together; which of them pays is decided
+          // per question by the server, not by a client-side guess.
+          startedRound = await startDailyRound(lookup);
+          questions = startedRound.questions;
         } else if (request.type === 'duel') {
-          // Both players get the same fixed five, in the same order.
+          // Both players get the same fixed set, in the same order - and
+          // without the solutions. In a duel the verdict is the server's.
           sessionType = 'duel';
           categoryName = DUEL_CATEGORY_NAME;
           duelId = request.duelId;
           duelFriendId = request.friendId ?? null;
-          questions = await fetchDuelQuestions(request.duelId, lookup);
+          startedRound = await startDuelRound(request.duelId, lookup);
+          questions = startedRound.questions;
         } else if (request.type === 'replay') {
           // The questions are already loaded – replay them in the given order.
           sessionType = 'weakness';
@@ -197,15 +208,18 @@ export function useStartQuiz() {
         }
 
         const [sessionId, progress, history] = await Promise.all([
-          createQuizSession({ userId, categoryId, sessionType, mode, totalQuestions: questions.length }),
+          startedRound
+            ? Promise.resolve(startedRound.sessionId)
+            : createQuizSession({ userId, categoryId, sessionType, mode, totalQuestions: questions.length }),
           queryClient.fetchQuery({ queryKey: queryKeys.progress, queryFn: () => fetchProgress(userId), staleTime: 30_000 }),
           // Drives the "neu" / "schon beantwortet" badge and the no-XP-on-repeat rule.
           fetchAnswerHistory(userId, questions.map((question) => question.id)),
         ]);
 
-        // Bind the fresh session to my side of the duel before the first answer
-        // lands, so the server can score it once both have played.
-        if (duelId) await joinDuel(duelId, sessionId);
+        // Die Bindung an die eigene Seite des Duells passiert in
+        // start_duel_round() – in derselben Transaktion wie die Runde selbst.
+        // Es gibt damit keinen Moment mehr, in dem eine Duellrunde existiert,
+        // die zu keinem Duell gehoert.
 
         // The server pays out only for the earliest daily round of the day.
         // Asking it directly keeps the result screen in sync with the payout.

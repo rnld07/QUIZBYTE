@@ -123,9 +123,17 @@ export async function listQuestions(filters: QuestionFilters, signalIds?: string
   };
 }
 
+/**
+ * Eine Frage vollstaendig – Loesung und Erklaerung eingeschlossen.
+ *
+ * Ueber eine Funktion statt ueber die Tabelle: das Leserecht auf
+ * `correct_answer` und `explanation` faellt fuer die API-Rollen weg, sobald
+ * genug App-Installationen ohne es auskommen. Das Adminformular braucht beides
+ * und bekommt es ueber einen Weg, der die Adminrolle selbst prueft.
+ */
 export async function getQuestion(id: string): Promise<Tables<'questions'> | null> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from('questions').select('*').eq('id', id).maybeSingle();
+  const { data, error } = await supabase.rpc('admin_question', { p_id: id });
   if (error) throw new Error(`Frage konnte nicht geladen werden: ${error.message}`);
-  return data;
+  return data?.[0] ?? null;
 }

@@ -1,12 +1,13 @@
-import type { AnswerKey, AttemptResult, QuizMode, SessionType, UserProgress } from '@quizbyte/shared';
+import type { AnswerKey, AttemptResult, QuizMode, QuizQuestion, SessionType, UserProgress } from '@quizbyte/shared';
 import type { CompletedQuizSession } from '@/state/quizSessionStore';
 import type { Tables } from '@quizbyte/database';
 
-import { toAppError } from '@/services/errors';
+import { AppError, toAppError } from '@/services/errors';
 import { supabase } from '@/services/supabase/client';
 
 import { fetchCategories } from './categoriesApi';
-import { toUserProgress } from './mappers';
+import type { CategoryLookup, QuestionRow } from './mappers';
+import { toQuizQuestion, toUserProgress } from './mappers';
 import { fetchProgress } from './progressApi';
 import { fetchSessionQuestionsById } from './questionsApi';
 
@@ -29,6 +30,55 @@ export interface CreateSessionInput {
   /** How the round is played; the server stores it with the session. */
   mode: QuizMode;
   totalQuestions: number;
+}
+
+/** What a server-started round hands back: the round and the questions it consists of. */
+export interface StartedRound {
+  sessionId: string;
+  questions: QuizQuestion[];
+}
+
+interface RoundPayload {
+  session_id: string;
+  questions: QuestionRow[];
+}
+
+function toStartedRound(payload: unknown, categories: CategoryLookup): StartedRound {
+  const round = payload as RoundPayload | null;
+  if (!round?.session_id) {
+    throw new AppError('unknown', 'Die Runde konnte nicht gestartet werden. Bitte versuche es erneut.');
+  }
+  return {
+    sessionId: round.session_id,
+    questions: (round.questions ?? []).map((row) => toQuizQuestion(row, categories)),
+  };
+}
+
+/**
+ * Starts today's daily round on the server.
+ *
+ * The questions come back with the round, and the server keeps the list: an
+ * answer to anything else is refused from here on. That is the whole point -
+ * before this, the round was whatever the client said it was.
+ */
+export async function startDailyRound(categories: CategoryLookup): Promise<StartedRound> {
+  const { data, error } = await supabase.rpc('start_daily_round');
+  if (error) throw toAppError(error, 'Das Daily Quiz konnte nicht gestartet werden. Bitte versuche es erneut.');
+  return toStartedRound(data, categories);
+}
+
+/**
+ * Starts the caller's side of a duel.
+ *
+ * Binds the round to the duel in the same breath, so there is no window in
+ * which a round exists that belongs to nobody. The questions arrive **without**
+ * the solution: in a duel the verdict comes from the server once the answer is
+ * in.
+ */
+export async function startDuelRound(duelId: string, categories: CategoryLookup): Promise<StartedRound> {
+  const { data, error } = await supabase.rpc('start_duel_round', { p_duel_id: duelId });
+  if (error) throw toAppError(error, 'Das Duell konnte nicht gestartet werden. Bitte versuche es erneut.');
+  return toStartedRound(data, categories);
 }
 
 export async function createQuizSession(input: CreateSessionInput): Promise<string> {
@@ -57,30 +107,55 @@ export interface SubmitAttemptInput {
   answeredOn: string;
 }
 
+/** An answer as the server recorded it, plus what it is now willing to reveal. */
+export interface SubmittedAttempt extends AttemptResult {
+  /**
+   * The solution. In a solo round the app already knew it; in a duel this is
+   * the first time it learns it, and only for the question just answered.
+   */
+  correctAnswer: AnswerKey | null;
+  explanation: string;
+}
+
+interface AttemptPayload {
+  question_id: string;
+  selected_answer: AnswerKey;
+  is_correct: boolean;
+  response_time_ms: number;
+  xp_earned: number;
+  correct_answer: AnswerKey | null;
+  explanation: string | null;
+}
+
 /**
  * Stores one answered question. The server decides `is_correct` and `xp_earned`;
  * the returned values are authoritative.
+ *
+ * An RPC rather than an insert, for two reasons. A duel question arrives
+ * without its solution, so the answer has to bring it back - `returning` can
+ * only hand out columns of the row it just wrote. And sending the same answer
+ * twice now returns the first result instead of a unique violation, which is
+ * what makes a retry from the offline queue harmless.
  */
-export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptResult> {
-  const { data, error } = await supabase
-    .from('quiz_attempts')
-    .insert({
-      user_id: input.userId,
-      quiz_session_id: input.sessionId,
-      question_id: input.questionId,
-      selected_answer: input.selectedAnswer,
-      response_time_ms: Math.max(0, Math.round(input.responseTimeMs)),
-      answered_on: input.answeredOn,
-    })
-    .select('question_id, selected_answer, is_correct, response_time_ms, xp_earned')
-    .single();
+export async function submitAttempt(input: SubmitAttemptInput): Promise<SubmittedAttempt> {
+  const { data, error } = await supabase.rpc('submit_attempt', {
+    p_session_id: input.sessionId,
+    p_question_id: input.questionId,
+    p_answer: input.selectedAnswer,
+    p_response_time_ms: Math.max(0, Math.round(input.responseTimeMs)),
+    p_answered_on: input.answeredOn,
+  });
   if (error) throw toAppError(error);
+  const attempt = data as AttemptPayload | null;
+  if (!attempt?.question_id) throw new AppError('unknown', 'Die Antwort konnte nicht gespeichert werden.');
   return {
-    questionId: data.question_id,
-    selectedAnswer: data.selected_answer,
-    isCorrect: data.is_correct,
-    responseTimeMs: data.response_time_ms,
-    xpEarned: data.xp_earned,
+    questionId: attempt.question_id,
+    selectedAnswer: attempt.selected_answer,
+    isCorrect: attempt.is_correct,
+    responseTimeMs: attempt.response_time_ms,
+    xpEarned: attempt.xp_earned,
+    correctAnswer: attempt.correct_answer ?? null,
+    explanation: attempt.explanation ?? '',
   };
 }
 

@@ -518,6 +518,51 @@ export type Database = {
           },
         ];
       };
+      quiz_session_questions: {
+        Row: {
+          quiz_session_id: string;
+          question_id: string;
+          sort_position: number;
+        };
+        Insert: {
+          quiz_session_id: string;
+          question_id: string;
+          sort_position: number;
+        };
+        Update: {
+          quiz_session_id?: string;
+          question_id?: string;
+          sort_position?: number;
+        };
+        Relationships: [];
+      };
+      daily_question_payouts: {
+        Row: {
+          user_id: string;
+          quiz_day: string;
+          question_id: string;
+          xp: number;
+          was_correct: boolean;
+          claimed_at: string;
+        };
+        Insert: {
+          user_id: string;
+          quiz_day: string;
+          question_id: string;
+          xp?: number;
+          was_correct: boolean;
+          claimed_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          quiz_day?: string;
+          question_id?: string;
+          xp?: number;
+          was_correct?: boolean;
+          claimed_at?: string;
+        };
+        Relationships: [];
+      };
       quiz_sessions: {
         Row: {
           id: string;
@@ -531,6 +576,7 @@ export type Database = {
           correct_answers: number;
           xp_earned: number;
           created_at: string;
+          question_set_enforced: boolean;
         };
         Insert: {
           id?: string;
@@ -544,6 +590,7 @@ export type Database = {
           correct_answers?: number;
           xp_earned?: number;
           created_at?: string;
+          question_set_enforced?: boolean;
         };
         Update: {
           id?: string;
@@ -557,6 +604,7 @@ export type Database = {
           correct_answers?: number;
           xp_earned?: number;
           created_at?: string;
+          question_set_enforced?: boolean;
         };
         Relationships: [
           {
@@ -1244,6 +1292,41 @@ export type Database = {
       is_username_available: {
         Args: { p_username: string };
         Returns: boolean;
+      };
+      start_daily_round: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
+      start_duel_round: {
+        Args: { p_duel_id: string };
+        Returns: Json;
+      };
+      submit_attempt: {
+        Args: {
+          p_session_id: string;
+          p_question_id: string;
+          p_answer: Database['public']['Enums']['answer_key'];
+          p_response_time_ms?: number;
+          p_answered_on?: string;
+        };
+        Returns: Json;
+      };
+      get_questions_for_chat: {
+        Args: { p_question_ids: string[] };
+        Returns: Database['public']['Tables']['questions']['Row'][];
+      };
+      admin_question: {
+        Args: { p_id: string };
+        Returns: Database['public']['Tables']['questions']['Row'][];
+      };
+      admin_legacy_session_starts: {
+        Args: { p_days?: number };
+        Returns: {
+          day: string;
+          session_type: Database['public']['Enums']['session_type'];
+          sessions: number;
+          users: number;
+        }[];
       };
       require_active_user: {
         Args: Record<PropertyKey, never>;

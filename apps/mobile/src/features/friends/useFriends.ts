@@ -244,6 +244,15 @@ function useConversationMutation<TVariables>(friendId: string | null, mutationFn
     mutationFn,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...queryKeys.conversation, friendId] });
+      /*
+        Die geteilte Frage noch einmal holen.
+
+        Sie kommt ohne Loesung, solange sie unbeantwortet ist – sonst stuende
+        die Antwort im Datensatz des Bildschirms, der sie gerade abfragt. Nach
+        der Abgabe gibt der Server sie heraus, und erst dann kann die Erklaerung
+        erscheinen.
+      */
+      void queryClient.invalidateQueries({ queryKey: ['friends', 'shared-question'] });
     },
   });
 }

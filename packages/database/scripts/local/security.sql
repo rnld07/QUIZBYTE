@@ -339,6 +339,278 @@ begin
 end $$;
 
 
+-- 9. A round knows which questions belong to it --------------------------------
+select public.__act_reset();
+
+insert into auth.users (id, email, is_anonymous) values
+  ('bbbbbbbb-0000-4000-8000-000000000005', 'sec-daily@example.com', false),
+  ('bbbbbbbb-0000-4000-8000-000000000006', 'sec-duel@example.com', false);
+
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000005');
+
+do $$
+declare
+  v_payload jsonb;
+  v_session uuid;
+  v_first uuid;
+  v_outsider uuid;
+  v_blocked boolean := false;
+  v_result jsonb;
+begin
+  v_payload := public.start_daily_round();
+  v_session := (v_payload ->> 'session_id')::uuid;
+  insert into public.__ids values ('daily_a', v_session);
+
+  assert jsonb_array_length(v_payload -> 'questions') = 5,
+    format('the daily round has five questions, got %s', jsonb_array_length(v_payload -> 'questions'));
+  assert (select question_set_enforced from public.quiz_sessions where id = v_session),
+    'a round started on the server carries its question set';
+  assert (select count(*) from public.quiz_session_questions where quiz_session_id = v_session) = 5,
+    'and the set is stored';
+
+  -- Die Loesung ist im Solo-Modus dabei: die Runde wird auf dem Geraet
+  -- ausgewertet, auch ohne Verbindung.
+  assert (v_payload -> 'questions' -> 0 ? 'correct_answer'),
+    'a solo round still carries the solution';
+
+  -- Eine Frage, die nicht zur Runde gehoert, wird abgewiesen.
+  select q.id into v_outsider
+  from public.questions q
+  where q.status = 'published'
+    and not exists (
+      select 1 from public.quiz_session_questions sq
+      where sq.quiz_session_id = v_session and sq.question_id = q.id
+    )
+  limit 1;
+
+  begin
+    perform public.submit_attempt(v_session, v_outsider, 'A');
+  exception when check_violation then v_blocked := true;
+  end;
+  assert v_blocked, 'a question outside the round is rejected';
+
+  -- Eine Frage aus der Runde geht durch, und die Abgabe sagt, was richtig war.
+  select sq.question_id into v_first
+  from public.quiz_session_questions sq
+  where sq.quiz_session_id = v_session
+  order by sq.sort_position
+  limit 1;
+  insert into public.__ids values ('daily_q1', v_first);
+
+  v_result := public.submit_attempt(v_session, v_first, 'A');
+  assert v_result ? 'correct_answer', 'the answer comes back with the solution';
+  assert v_result ? 'explanation', 'and with the explanation';
+end $$;
+
+
+-- 10. A daily question pays once per day ----------------------------------------
+do $$
+declare
+  v_q1 uuid;
+  v_first_xp integer;
+  v_was_correct boolean;
+  v_payload jsonb;
+  v_session_b uuid;
+  v_second uuid;
+  v_result jsonb;
+begin
+  select id into v_q1 from public.__ids where key = 'daily_q1';
+
+  select xp, was_correct into v_first_xp, v_was_correct
+  from public.daily_question_payouts
+  where user_id = auth.uid() and question_id = v_q1;
+  assert found, 'the first attempt is on the ledger';
+
+  -- Zweite Runde am selben Tag, dieselbe Frage.
+  v_payload := public.start_daily_round();
+  v_session_b := (v_payload ->> 'session_id')::uuid;
+
+  v_result := public.submit_attempt(v_session_b, v_q1, 'B');
+  assert (v_result ->> 'xp_earned')::int = 0,
+    format('the second answer to the same daily question pays nothing, got %s', v_result ->> 'xp_earned');
+
+  -- Und die Ledger-Zeile bleibt die des ersten Versuchs.
+  assert (select xp from public.daily_question_payouts
+          where user_id = auth.uid() and question_id = v_q1) = v_first_xp,
+    'the ledger keeps the first result';
+  assert (select was_correct from public.daily_question_payouts
+          where user_id = auth.uid() and question_id = v_q1) = v_was_correct,
+    'including whether it was right';
+
+  -- Eine andere Frage desselben Tages zahlt dagegen.
+  select sq.question_id into v_second
+  from public.quiz_session_questions sq
+  where sq.quiz_session_id = v_session_b and sq.question_id <> v_q1
+  order by sq.sort_position
+  limit 1;
+
+  v_result := public.submit_attempt(
+    v_session_b,
+    v_second,
+    (select correct_answer from public.questions where id = v_second));
+  assert (v_result ->> 'is_correct')::boolean, 'the right answer is recognised';
+  assert (v_result ->> 'xp_earned')::int > 0,
+    'a question not yet settled still pays in the second round';
+
+  -- Und eine unvollstaendige Runde ist nicht perfekt.
+  assert not public.daily_quiz_was_perfect(), 'an unfinished daily round is not perfect';
+end $$;
+
+
+-- 11. A wrong first answer uses the question up ---------------------------------
+select public.__act_reset();
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000006');
+
+do $$
+declare
+  v_payload jsonb;
+  v_session uuid;
+  v_q uuid;
+  v_correct public.answer_key;
+  v_wrong public.answer_key;
+  v_result jsonb;
+  v_session_b uuid;
+begin
+  v_payload := public.start_daily_round();
+  v_session := (v_payload ->> 'session_id')::uuid;
+
+  select sq.question_id into v_q
+  from public.quiz_session_questions sq
+  where sq.quiz_session_id = v_session
+  order by sq.sort_position
+  limit 1;
+
+  select correct_answer into v_correct from public.questions where id = v_q;
+  v_wrong := case when v_correct = 'A' then 'B'::public.answer_key else 'A'::public.answer_key end;
+
+  v_result := public.submit_attempt(v_session, v_q, v_wrong);
+  assert not (v_result ->> 'is_correct')::boolean, 'the wrong answer is recognised';
+  assert (v_result ->> 'xp_earned')::int = 0, 'and pays nothing';
+
+  assert (select was_correct from public.daily_question_payouts
+          where user_id = auth.uid() and question_id = v_q) = false,
+    'the ledger records the first attempt even when it was wrong';
+
+  -- Zweite Runde, diesmal richtig: der Tag ist fuer diese Frage verbraucht.
+  v_payload := public.start_daily_round();
+  v_session_b := (v_payload ->> 'session_id')::uuid;
+  v_result := public.submit_attempt(v_session_b, v_q, v_correct);
+  assert (v_result ->> 'is_correct')::boolean, 'the answer is right this time';
+  assert (v_result ->> 'xp_earned')::int = 0,
+    'but the question is settled for today, so it pays nothing';
+end $$;
+
+
+-- 12. A duel round comes without the solution -----------------------------------
+select public.__act_reset();
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000005');
+
+do $$
+declare v_id uuid;
+begin
+  -- Erst Freunde, dann Duell.
+  v_id := public.send_friend_request('bbbbbbbb-0000-4000-8000-000000000006');
+  insert into public.__ids values ('duel_friendship', v_id);
+end $$;
+
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000006');
+
+do $$
+declare v_duel uuid;
+begin
+  perform public.respond_friend_request((select id from public.__ids where key = 'duel_friendship'), true);
+  v_duel := public.create_duel('bbbbbbbb-0000-4000-8000-000000000005', 'classic');
+  insert into public.__ids values ('duel_b', v_duel);
+end $$;
+
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000005');
+
+do $$
+declare
+  v_duel uuid;
+  v_payload jsonb;
+  v_session uuid;
+  v_blocked boolean := false;
+  v_question jsonb;
+begin
+  select id into v_duel from public.__ids where key = 'duel_b';
+
+  v_payload := public.start_duel_round(v_duel);
+  v_session := (v_payload ->> 'session_id')::uuid;
+  v_question := v_payload -> 'questions' -> 0;
+
+  assert not (v_question ? 'correct_answer'), 'a duel question carries no solution';
+  assert not (v_question ? 'explanation'), 'and no explanation either';
+  assert v_question ? 'question_text', 'but everything needed to play';
+
+  assert (select challenger_session_id from public.duels where id = v_duel) is not null
+      or (select opponent_session_id from public.duels where id = v_duel) is not null,
+    'the round is bound to the duel';
+  assert (select status from public.duels where id = v_duel) = 'active', 'and the duel is running';
+
+  -- Ein zweites Mal geht nicht.
+  begin
+    perform public.start_duel_round(v_duel);
+  exception when check_violation then v_blocked := true;
+  end;
+  assert v_blocked, 'a duel side is played once';
+
+  -- Die Abgabe sagt, was richtig war.
+  declare
+    v_q uuid;
+    v_result jsonb;
+  begin
+    select sq.question_id into v_q from public.quiz_session_questions sq
+    where sq.quiz_session_id = v_session order by sq.sort_position limit 1;
+    v_result := public.submit_attempt(v_session, v_q, 'A');
+    assert v_result ? 'correct_answer', 'the duel answer comes back with the solution';
+    -- Und noch einmal dieselbe Antwort: dasselbe Ergebnis, kein Fehler.
+    assert public.submit_attempt(v_session, v_q, 'A') ->> 'is_correct'
+         = (v_result ->> 'is_correct'),
+      'sending the same answer twice returns the same result';
+  end;
+end $$;
+
+-- Ein Unbeteiligter kommt nicht an die Runde.
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000002');
+
+do $$
+declare v_blocked boolean := false;
+begin
+  begin
+    perform public.start_duel_round((select id from public.__ids where key = 'duel_b'));
+  exception when insufficient_privilege then v_blocked := true;
+  end;
+  assert v_blocked, 'only the two of them play their duel';
+end $$;
+
+
+-- 13. Old rounds keep working ----------------------------------------------------
+-- Alles von vor dieser Migration hat kein Fragenset. Der Trigger laesst es
+-- unveraendert durch – sonst braechen laufende Runden und Antworten, die noch
+-- in einer Offline-Warteschlange liegen.
+select public.__act_reset();
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000002');
+
+do $$
+declare v_session uuid; v_question uuid;
+begin
+  insert into public.quiz_sessions (user_id, session_type, total_questions)
+  values (auth.uid(), 'random', 2)
+  returning id into v_session;
+
+  assert not (select question_set_enforced from public.quiz_sessions where id = v_session),
+    'a round created the old way has no set';
+
+  select id into v_question from public.questions where status = 'published' order by id desc limit 1;
+  insert into public.quiz_attempts (user_id, question_id, quiz_session_id, selected_answer)
+  values (auth.uid(), v_question, v_session, 'A');
+
+  assert (select count(*) from public.quiz_attempts where quiz_session_id = v_session) = 1,
+    'and any published question is still accepted there';
+end $$;
+
+
 select public.__act_reset();
 drop table public.__ids;
 drop function public.__act_as(uuid, text);

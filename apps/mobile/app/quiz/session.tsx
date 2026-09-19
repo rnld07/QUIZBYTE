@@ -37,8 +37,22 @@ function resolveCategoryIcon(icon: string | null): IoniconName {
 /** Badge letters follow the position on screen, so they always read A-B-C-D. */
 const POSITION_LABELS = ANSWER_KEYS;
 
-function optionState(key: AnswerKey, correct: AnswerKey, selected: AnswerKey | null): AnswerOptionState {
+/**
+ * Wie eine Antwortmöglichkeit aussieht.
+ *
+ * `correct` ist null, solange der Server die Lösung nicht herausgibt – im
+ * Duell bis zur Abgabe. Dann ist die getippte Antwort "unterwegs" und die
+ * übrigen treten zurück; eingefärbt wird erst, wenn die Antwort da ist.
+ */
+function optionState(
+  key: AnswerKey,
+  correct: AnswerKey | null,
+  selected: AnswerKey | null,
+  pending: AnswerKey | null,
+): AnswerOptionState {
+  if (pending) return key === pending ? 'pending' : 'muted';
   if (!selected) return 'default';
+  if (!correct) return key === selected ? 'pending' : 'muted';
   if (key === correct) return 'correct';
   if (key === selected) return 'wrong';
   return 'muted';
@@ -292,12 +306,21 @@ function QuizSession({ contentScheme }: { contentScheme: ColorScheme }) {
               // otherwise the letters would read out of order.
               label={POSITION_LABELS[position] ?? key}
               text={question.answers[key]}
-              state={optionState(key, question.correctAnswer, selected)}
-              disabled={Boolean(attempt)}
+              state={optionState(key, question.correctAnswer, selected, quiz.pendingAnswer)}
+              disabled={Boolean(attempt) || Boolean(quiz.pendingAnswer)}
               onPress={quiz.answer}
             />
           ))}
         </View>
+
+        {/* Eine Duellantwort, die nicht ankam: hier steht, warum – und dass ein
+            zweiter Tipp reicht. Sie steht ausserhalb des Antwort-Blocks, weil es
+            in genau diesem Fall noch keine Antwort gibt. */}
+        {quiz.answerError ? (
+          <Text color="danger" style={styles.error}>
+            {quiz.answerError}
+          </Text>
+        ) : null}
 
         {attempt ? (
           <ExplanationCard isCorrect={attempt.isCorrect} explanation={question.explanation} xpEarned={attempt.xpEarned} />

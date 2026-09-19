@@ -1,12 +1,10 @@
 import { computeLevelProgress, normalizeAvatarConfig, quizModeById } from '@quizbyte/shared';
-import type { AnswerKey, AvatarConfig, QuizMode, QuizQuestion } from '@quizbyte/shared';
+import type { AnswerKey, AvatarConfig, QuizMode } from '@quizbyte/shared';
 
 import type { ModeRecord } from '@/services/api/progressApi';
 import { AppError, toAppError } from '@/services/errors';
 import { supabase } from '@/services/supabase/client';
 
-import type { CategoryLookup } from './mappers';
-import { toQuizQuestion } from './mappers';
 
 /** How I stand towards a user found in the search. */
 export type FriendStatus = 'none' | 'requested' | 'incoming' | 'friends';
@@ -372,18 +370,6 @@ export async function declineDuel(duelId: string): Promise<void> {
   if (data !== true) {
     throw new AppError('conflict', 'Dieses Duell lässt sich nicht mehr ablehnen.');
   }
-}
-
-export async function fetchDuelQuestions(duelId: string, categories: CategoryLookup): Promise<QuizQuestion[]> {
-  const { data, error } = await supabase.rpc('get_duel_questions', { p_duel_id: duelId });
-  if (error) throw toAppError(error, 'Die Fragen konnten gerade nicht geladen werden.');
-  return (data ?? []).map((row) => toQuizQuestion(row, categories));
-}
-
-/** Binds a freshly created quiz session to my side of the duel. */
-export async function joinDuel(duelId: string, sessionId: string): Promise<void> {
-  const { error } = await supabase.rpc('join_duel', { p_duel_id: duelId, p_session_id: sessionId });
-  if (error) throw toAppError(error, 'Das Duell konnte nicht gestartet werden.');
 }
 
 /** Asks the server to score the duel – it does nothing until both have played. */

@@ -115,16 +115,6 @@ export async function fetchAnswerHistory(userId: string, questionIds: string[]):
   return { seen: [...seen], mastered: [...mastered] };
 }
 
-/**
- * The questions of the current quiz day, in their fixed order.
- * The server derives both from the date, so a repeat shows the same round.
- */
-export async function fetchDailyQuestions(limit: number, categories: CategoryLookup): Promise<QuizQuestion[]> {
-  const { data, error } = await supabase.rpc('get_daily_questions', { p_limit: limit });
-  if (error) throw toAppError(error, LOAD_ERROR);
-  return (data ?? []).map((row) => toQuizQuestion(row, categories));
-}
-
 /** The questions the user bookmarked, most recently saved first. */
 export async function fetchSavedQuestions(limit: number, categories: CategoryLookup): Promise<QuizQuestion[]> {
   const { data, error } = await supabase.rpc('get_my_saved_questions', { p_limit: limit });
@@ -180,10 +170,16 @@ export async function reportQuestion(input: ReportQuestionInput): Promise<void> 
   if (error) throw toAppError(error, 'Die Meldung konnte nicht gesendet werden. Bitte versuche es erneut.');
 }
 
-/** Specific questions by id – used by the friend chat to render shared ones. */
+/**
+ * Specific questions by id – used by the friend chat to render shared ones.
+ *
+ * Through an RPC rather than off the table: the server hands out the solution
+ * only for questions the user has already answered. Before that, the answer
+ * would be sitting in the payload of the very screen that asks for it.
+ */
 export async function fetchQuestionsByIds(questionIds: string[], categories: CategoryLookup): Promise<QuizQuestion[]> {
   if (questionIds.length === 0) return [];
-  const { data, error } = await supabase.from('questions').select('*').in('id', questionIds).eq('status', 'published');
+  const { data, error } = await supabase.rpc('get_questions_for_chat', { p_question_ids: questionIds });
   if (error) throw toAppError(error, LOAD_ERROR);
   return (data ?? []).map((row) => toQuizQuestion(row, categories));
 }

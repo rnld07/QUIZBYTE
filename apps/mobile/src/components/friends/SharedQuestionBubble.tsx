@@ -65,8 +65,13 @@ export function SharedQuestionBubble({ question, mine, answer, friendName, onOpe
   }
 
   const keys = answerOrder(question.id);
-  // The sender may see the solution; the recipient only after answering.
-  const revealed = mine || answer !== null;
+  /*
+    Die Loesung zeigt, wer sie kennen darf – und wer sie vom Server bekommen
+    hat. Seit die Frage maskiert ausgeliefert wird, ist das zweite die
+    eigentliche Bedingung: wer die Frage nie beantwortet hat, sieht sie auch als
+    Absender nicht mehr.
+  */
+  const revealed = question.correctAnswer !== null && (mine || answer !== null);
   const accent = question.categoryAccentColor ?? colors.primary;
 
   const state = (key: AnswerKey): AnswerOptionState => {
