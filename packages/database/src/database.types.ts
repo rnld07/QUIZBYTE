@@ -709,6 +709,37 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: number;
       };
+      get_my_played_days: {
+        Args: { p_days?: number };
+        Returns: string[];
+      };
+      get_my_history: {
+        Args: { p_days?: number };
+        Returns: {
+          bucket_start: string;
+          answered: number;
+          correct: number;
+          wrong: number;
+          sessions: number;
+          perfect: number;
+          duels: number;
+          duels_won: number;
+          duels_drawn: number;
+          duels_lost: number;
+        }[];
+      };
+      get_my_totals: {
+        Args: { p_days?: number | null };
+        Returns: {
+          answered: number;
+          correct: number;
+          wrong: number;
+          sessions: number;
+          perfect: number;
+          duels: number;
+          longest_streak: number;
+        }[];
+      };
       get_my_accuracy_trend: {
         Args: { p_days?: number };
         Returns: {

@@ -31,4 +31,6 @@ export const queryKeys = {
   duel: ['friends', 'duel'] as const,
   dailyHistory: ['stats', 'history'] as const,
   accuracyTrend: ['stats', 'trend'] as const,
+  totals: ['stats', 'totals'] as const,
+  playedDays: ['stats', 'played-days'] as const,
 } as const;

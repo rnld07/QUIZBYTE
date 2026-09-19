@@ -59,14 +59,15 @@ export function AccuracyTrend({ points, days, loading, onChangeDays }: AccuracyT
 
   const range = TREND_RANGES.find((entry) => entry.days === days) ?? TREND_RANGES[0];
   const withValue = points.filter((point) => point.accuracy !== null);
-  const answered = points.reduce((sum, point) => sum + point.answered, 0);
-  const correct = points.reduce((sum, point) => sum + point.correct, 0);
-  const average = answered > 0 ? Math.round((correct / answered) * 100) : null;
+  /*
+    Der zuletzt gemessene Abschnitt, nicht der Durchschnitt.
 
-  // Erster und letzter gemessener Punkt – daraus wird die Richtung.
-  const first = withValue[0]?.accuracy ?? null;
-  const last = withValue.at(-1)?.accuracy ?? null;
-  const delta = first !== null && last !== null && withValue.length > 1 ? last - first : null;
+    Ein Mittelwert über ein halbes Jahr, in dem an fünf Tagen gespielt wurde,
+    ist rechnerisch richtig und sagt trotzdem nichts – er stammt aus den
+    Antworten dieser fünf Tage und heißt trotzdem "im Zeitraum". Der letzte
+    Wert ist dagegen einer, den es wirklich gab.
+  */
+  const latest = withValue.at(-1) ?? null;
 
   const plotWidth = Math.max(0, width - PAD_LEFT - PAD_RIGHT);
   const plotHeight = HEIGHT - PAD_TOP * 2;
@@ -120,22 +121,30 @@ export function AccuracyTrend({ points, days, loading, onChangeDays }: AccuracyT
       */}
       <View style={styles.head}>
         <View style={styles.headText}>
-          <Text style={[styles.value, active && active.accuracy !== null ? { color: colors.success } : null]}>
-            {active ? (active.accuracy === null ? '–' : `${active.accuracy} %`) : average === null ? '–' : `${average} %`}
+          <Text
+            style={[
+              styles.value,
+              active && active.accuracy !== null ? { color: colors.success } : null,
+            ]}
+          >
+            {active
+              ? active.accuracy === null
+                ? '–'
+                : `${active.accuracy} %`
+              : latest === null
+                ? '–'
+                : `${latest.accuracy} %`}
           </Text>
           {active ? (
             <Text variant="caption" color="muted">
               {label(active)}
-              {active.answered > 0 ? ` · ${active.correct}/${active.answered} richtig` : ' · nicht gespielt'}
+              {active.answered > 0
+                ? ` · ${active.correct}/${active.answered} richtig`
+                : ' · nicht gespielt'}
             </Text>
           ) : (
             <Text variant="caption" color="muted">
-              Ø im Zeitraum
-              {delta !== null && delta !== 0 ? (
-                <Text variant="caption" style={{ color: delta > 0 ? colors.success : colors.danger }}>
-                  {`  ${delta > 0 ? '▲' : '▼'} ${Math.abs(delta)}`}
-                </Text>
-              ) : null}
+              {latest === null ? 'noch nichts' : `zuletzt · ${label(latest)}`}
             </Text>
           )}
         </View>
@@ -196,9 +205,15 @@ export function AccuracyTrend({ points, days, loading, onChangeDays }: AccuracyT
             ))}
 
             {withValue.length > 1 ? (
-              <Path d={line} stroke={colors.primary} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              <Path
+                d={line}
+                stroke={colors.primary}
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
             ) : null}
-
 
             {/* Punkte nur bei wenigen Messstellen: bei zwölf Monaten ist jeder
                 Punkt eine Marke, bei dreißig Tagen eine Perlenkette. */}
@@ -293,15 +308,23 @@ export function AccuracyTrend({ points, days, loading, onChangeDays }: AccuracyT
             accessibilityRole="radio"
             accessibilityState={{ selected: entry.days === days }}
             accessibilityLabel={entry.label}
-            style={({ pressed }) => [styles.option, entry.days === days && styles.optionActive, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.option,
+              entry.days === days && styles.optionActive,
+              pressed && styles.pressed,
+            ]}
           >
             <View style={styles.optionText}>
-              <Text style={[styles.optionLabel, entry.days === days && styles.optionLabelActive]}>{entry.label}</Text>
+              <Text style={[styles.optionLabel, entry.days === days && styles.optionLabelActive]}>
+                {entry.label}
+              </Text>
               <Text variant="label" color="muted">
                 {entry.grain}
               </Text>
             </View>
-            {entry.days === days ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
+            {entry.days === days ? (
+              <Ionicons name="checkmark" size={18} color={colors.primary} />
+            ) : null}
           </Pressable>
         ))}
       </BottomSheet>
@@ -311,7 +334,12 @@ export function AccuracyTrend({ points, days, loading, onChangeDays }: AccuracyT
 
 const useStyles = makeStyles((colors) => ({
   card: { gap: spacing.sm },
-  head: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
+  head: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
   headText: { flex: 1, gap: 1 },
   value: { fontSize: 30, fontWeight: '900', lineHeight: 34, color: colors.textPrimary },
   rangeButton: {
@@ -330,8 +358,20 @@ const useStyles = makeStyles((colors) => ({
 
   plot: { alignSelf: 'stretch' },
   empty: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
-  axis: { position: 'absolute', left: 0, width: 24, fontSize: 9, textAlign: 'right', color: colors.textMuted },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  axis: {
+    position: 'absolute',
+    left: 0,
+    width: 24,
+    fontSize: 9,
+    textAlign: 'right',
+    color: colors.textMuted,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
 
   option: {
     flexDirection: 'row',

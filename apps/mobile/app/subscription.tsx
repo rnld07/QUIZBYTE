@@ -32,12 +32,28 @@ const PERKS: readonly Perk[] = [
   // niemand einlösen kann.
   { label: 'Alle Kategorien freigeschaltet', free: false, premium: true },
   { label: 'Ein kostenpflichtiger Lernzettel pro Monat', free: false, premium: true, soon: true },
+  { label: 'Detaillierte Analyse', free: false, premium: true, soon: true },
 
   { label: 'Tagesquiz, Tagesaufgaben und Glücksrad', free: true, premium: true },
   { label: 'Freunde, Duelle und geteilte Fragen', free: true, premium: true },
   { label: 'Freie Lernzettel ansehen und als PDF speichern', free: true, premium: true },
   { label: 'Fortschritt, Medaillen und Profilrahmen', free: true, premium: true },
 ];
+
+/**
+ * Die Farben, die Premium trägt.
+ *
+ * Gold, nicht das Blau der App: Premium soll sich abheben, und Blau ist die
+ * Farbe, in der hier schon alles Normale steht.
+ */
+const GOLD = '#F1B434';
+const GOLD_RAMP = ['#FFE79B', '#F1B434', '#C8901A'] as const;
+/** Ein warmer Schein über der Karte – oben links am stärksten. */
+const GOLD_BLOOM = [
+  'rgba(241, 180, 52, 0.22)',
+  'rgba(241, 180, 52, 0.06)',
+  'rgba(241, 180, 52, 0)',
+] as const;
 
 /**
  * Die beiden Abrechnungszeiträume.
@@ -89,7 +105,9 @@ export default function SubscriptionScreen() {
   const router = useRouter();
 
   const plan = currentPlan();
-  const [billing, setBilling] = useState<Billing>('yearly');
+  const [billing, setBilling] = useState<Billing>('monthly');
+  // Eingeklappt: die Tabelle beantwortet eine Nachfrage, nicht die erste Frage.
+  const [comparing, setComparing] = useState(false);
   const chosen = BILLING[billing];
 
   return (
@@ -173,35 +191,53 @@ export default function SubscriptionScreen() {
       </View>
 
       <View style={styles.section}>
-        <SectionHeading title="Im Vergleich" />
-        <View style={styles.table}>
-          {PERKS.map((perk, index) => (
-            <View key={perk.label} style={[styles.tableRow, index > 0 && styles.tableRowDivided]}>
-              <Text variant="caption" style={styles.perkLabel}>
-                {perk.label}
-                {perk.soon ? (
-                  <Text variant="label" color="muted">
-                    {'  geplant'}
-                  </Text>
-                ) : null}
-              </Text>
-              <Mark on={perk.free} />
-              <Mark on={perk.premium} />
-            </View>
-          ))}
-
-          <View style={[styles.tableRow, styles.tableRowDivided]}>
-            <Text variant="label" color="muted" style={styles.perkLabel}>
-              {' '}
-            </Text>
-            <Text variant="label" color="muted" style={styles.markSlot}>
-              Free
-            </Text>
-            <Text variant="label" color="muted" style={styles.markSlot}>
-              Premium
-            </Text>
+        <Pressable
+          onPress={() => setComparing((open) => !open)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: comparing }}
+          accessibilityLabel="Tarife im Vergleich"
+          style={({ pressed }) => [styles.compareHead, pressed && styles.pressed]}
+        >
+          <View style={styles.compareTitle}>
+            <SectionHeading title="Im Vergleich" />
           </View>
-        </View>
+          <Ionicons
+            name={comparing ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={colors.textSecondary}
+          />
+        </Pressable>
+
+        {comparing ? (
+          <View style={styles.table}>
+            {PERKS.map((perk, index) => (
+              <View key={perk.label} style={[styles.tableRow, index > 0 && styles.tableRowDivided]}>
+                <Text variant="caption" style={styles.perkLabel}>
+                  {perk.label}
+                  {perk.soon ? (
+                    <Text variant="label" color="muted">
+                      {'  geplant'}
+                    </Text>
+                  ) : null}
+                </Text>
+                <Mark on={perk.free} />
+                <Mark on={perk.premium} />
+              </View>
+            ))}
+
+            <View style={[styles.tableRow, styles.tableRowDivided]}>
+              <Text variant="label" color="muted" style={styles.perkLabel}>
+                {' '}
+              </Text>
+              <Text variant="label" color="muted" style={styles.markSlot}>
+                Free
+              </Text>
+              <Text variant="label" color="muted" style={styles.markSlot}>
+                Premium
+              </Text>
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {/* Deaktiviert und als solcher beschriftet – nicht ausgegraut mit einem
@@ -256,30 +292,42 @@ function PlanCard({
 
   return (
     <View style={[styles.plan, highlight && styles.planHighlight]}>
-      {highlight ? (
-        <View style={styles.planFill}>
+      <View style={styles.planFill}>
+        <LinearGradient
+          colors={gradients.surface}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.7, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Der Schein liegt über der normalen Kartenfüllung statt an ihrer
+            Stelle: so bleibt die Karte eine Karte und wird golden, statt gelb
+            zu werden. */}
+        {highlight ? (
           <LinearGradient
-            colors={[`${colors.primary}26`, 'transparent']}
+            colors={GOLD_BLOOM}
             start={{ x: 0, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
+            end={{ x: 0.9, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-        </View>
-      ) : (
-        <View style={styles.planFill}>
-          <LinearGradient
-            colors={gradients.surface}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0.7, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </View>
-      )}
+        ) : null}
+      </View>
 
       <View style={styles.planHead}>
-        <Text variant="bodyStrong" style={styles.planName}>
+        {/* Der Name im Farbverlauf – bei Premium ist er die Marke. */}
+        <Text variant="bodyStrong" style={[styles.planName, highlight && styles.planNameGold]}>
           {name}
         </Text>
+        {highlight ? (
+          <View style={styles.ribbon}>
+            <LinearGradient
+              colors={GOLD_RAMP}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <Ionicons name="sparkles" size={11} color="#3A2A05" />
+          </View>
+        ) : null}
         {current ? (
           <View
             style={[
@@ -299,7 +347,7 @@ function PlanCard({
       </Text>
 
       <View style={styles.priceRow}>
-        <Text style={styles.price}>{price}</Text>
+        <Text style={[styles.price, highlight && styles.priceGold]}>{price}</Text>
         <Text variant="label" color="muted" style={styles.period}>
           {period}
         </Text>
@@ -318,12 +366,12 @@ function PlanCard({
         <View style={styles.perkList}>
           {perks.map((perk) => (
             <View key={perk.label} style={styles.perkRow}>
-              <Ionicons
-                name="checkmark"
-                size={16}
-                color={perk.soon ? colors.textMuted : colors.success}
-              />
-              <Text numberOfLines={2} style={[styles.perkText, perk.soon && styles.perkSoon]}>
+              {/* Alle Haken grün: die Karte sagt, was der Tarif umfasst, und
+                  ein grauer Haken dazwischen liest sich wie "das nicht". Dass
+                  Teile davon noch kommen, steht als "geplant" in der Tabelle
+                  darunter und im Hinweis oben. */}
+              <Ionicons name="checkmark" size={16} color={colors.success} />
+              <Text numberOfLines={2} style={styles.perkText}>
                 {perk.label}
               </Text>
             </View>
@@ -377,7 +425,17 @@ const useStyles = makeStyles((colors, shadows) => ({
     borderColor: colors.border,
     overflow: 'hidden',
   },
-  planHighlight: { borderColor: colors.primary },
+  planHighlight: { borderColor: `${GOLD}77` },
+  planNameGold: { color: GOLD },
+  priceGold: { color: GOLD },
+  ribbon: {
+    width: 22,
+    height: 22,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   planFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' },
   planHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   planName: { fontSize: 16, color: colors.textPrimary },
@@ -390,7 +448,7 @@ const useStyles = makeStyles((colors, shadows) => ({
   priceRow: { gap: 0, marginTop: spacing.xs, marginBottom: spacing.sm },
   price: { fontSize: 30, fontWeight: '900', lineHeight: 34, color: colors.textPrimary },
   period: { marginTop: 1 },
-  note: { marginTop: 3, color: colors.success },
+  note: { marginTop: 3, color: GOLD },
 
   /* Monat oder Jahr – eine Wahl aus zweien, deshalb Knöpfe und kein Schalter. */
   billing: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.md },
@@ -403,7 +461,7 @@ const useStyles = makeStyles((colors, shadows) => ({
     borderColor: colors.border,
     backgroundColor: colors.surfacePressed,
   },
-  billingOptionOn: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  billingOptionOn: { borderColor: `${GOLD}88`, backgroundColor: `${GOLD}1F` },
   billingText: { fontSize: 12, color: colors.textSecondary },
   billingTextOn: { color: colors.textPrimary, fontWeight: '700' },
   pressed: { opacity: 0.7 },
@@ -411,9 +469,11 @@ const useStyles = makeStyles((colors, shadows) => ({
   perkList: { gap: spacing.sm },
   perkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   perkText: { flex: 1, fontSize: 14, lineHeight: 19, color: colors.textSecondary },
-  perkSoon: { color: colors.textMuted },
 
   section: { gap: spacing.md, marginTop: spacing.xl },
+  compareHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  // Nimmt die Zeile ein, damit der Pfeil rechts steht und nicht am Wort klebt.
+  compareTitle: { flex: 1 },
   table: { borderRadius: radius.lg, overflow: 'hidden' },
   tableRow: {
     flexDirection: 'row',

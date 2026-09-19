@@ -235,18 +235,21 @@ const useStyles = makeStyles((colors, shadows) => ({
   subject: { marginBottom: spacing.xs },
   blockTitle: { fontSize: 10, letterSpacing: 1.2, color: colors.textMuted, marginTop: spacing.sm },
 
-  reasons: { gap: spacing.xs },
+  reasons: { gap: 0 },
+  /*
+    Ohne Kasten je Grund: sechs umrandete Felder untereinander waren sechs
+    Rahmen, die alle dasselbe sagten. Welcher gewählt ist, sagt jetzt die
+    getönte Fläche – und nur der.
+  */
   reason: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.md,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: colors.surfacePressed,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  reasonActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  reasonActive: { backgroundColor: colors.primarySoft },
   reasonPressed: { opacity: 0.7 },
   reasonText: { flex: 1, gap: 2 },
   reasonLabel: { fontSize: 14, color: colors.textPrimary },
@@ -255,10 +258,8 @@ const useStyles = makeStyles((colors, shadows) => ({
   input: {
     ...typography.body,
     color: colors.textPrimary,
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: colors.surfacePressed,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     minHeight: 88,

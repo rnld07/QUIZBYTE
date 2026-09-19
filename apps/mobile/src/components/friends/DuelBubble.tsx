@@ -257,7 +257,13 @@ function Side({
 
 const useStyles = makeStyles((colors) => ({
   // No padding of its own – the banner runs to the edges.
-  body: { overflow: 'hidden', borderRadius: radius.lg },
+  /*
+    Derselbe Radius wie die Blase darum, abzüglich ihrer Randstärke.
+
+    Vorher war er kleiner (`radius.lg` gegen `radius.xl`), und in den Ecken
+    blieb zwischen Rand und Inhalt eine sichelförmige Lücke stehen.
+  */
+  body: { overflow: 'hidden', borderRadius: radius.xl - 2 },
   pressed: { opacity: 0.75 },
 
   banner: { height: 56, backgroundColor: colors.warningSoft, justifyContent: 'flex-end' },

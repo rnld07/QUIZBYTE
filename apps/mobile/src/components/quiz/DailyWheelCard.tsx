@@ -32,7 +32,14 @@ interface DailyWheelCardProps {
  * afterwards is one most people never collect. Today's result stays reachable
  * from the daily card all day, so a spin left untaken is not a spin lost.
  */
-export function DailyWheelCard({ xpWon, spinning, error, onSpin, onDone, bare = false }: DailyWheelCardProps) {
+export function DailyWheelCard({
+  xpWon,
+  spinning,
+  error,
+  onSpin,
+  onDone,
+  bare = false,
+}: DailyWheelCardProps) {
   const styles = useStyles();
   const colors = useThemeColors();
   // Held back until the wheel has stopped: the number is the punchline. A
@@ -50,7 +57,11 @@ export function DailyWheelCard({ xpWon, spinning, error, onSpin, onDone, bare = 
 
       {/* The wheel is the button: tap it, or give it a flick the way you would
           a real one. The button below stays for anyone who does neither. */}
-      <View style={styles.wheelBox} accessibilityRole="button" accessibilityLabel="Glücksrad drehen">
+      <View
+        style={styles.wheelBox}
+        accessibilityRole="button"
+        accessibilityLabel="Glücksrad drehen"
+      >
         <PrizeWheel
           size={250}
           xpWon={xpWon}
@@ -75,9 +86,20 @@ export function DailyWheelCard({ xpWon, spinning, error, onSpin, onDone, bare = 
         </Text>
       ) : null}
 
-      {xpWon === null ? (
-        <Button title={spinning ? 'Dreht …' : 'Drehen'} onPress={onSpin} loading={spinning} style={styles.action} />
-      ) : onDone && revealed ? (
+      {/*
+        Der Knopf bleibt stehen, auch wenn nichts mehr zu drehen ist – er sagt
+        dann "Gedreht" und ist deaktiviert. Ein Knopf, der nach dem Tippen
+        verschwindet, lässt einen suchen, ob man ihn richtig getroffen hat.
+      */}
+      <Button
+        title={spinning ? 'Dreht …' : xpWon === null ? 'Drehen' : 'Gedreht'}
+        onPress={onSpin}
+        loading={spinning}
+        disabled={xpWon !== null}
+        style={styles.action}
+      />
+
+      {onDone && xpWon !== null && revealed ? (
         <Button title="Fertig" variant="secondary" onPress={onDone} style={styles.action} />
       ) : null}
     </View>

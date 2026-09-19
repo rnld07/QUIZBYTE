@@ -330,7 +330,12 @@ export default function FriendChatScreen() {
                       the same two things every card in the app is built from.
                       The colours are unchanged – a flat tint just had nothing
                       for the light to fall on. */}
-                  <View style={styles.bubbleFill}>
+                  <View
+                    style={[
+                      styles.bubbleFill,
+                      mine ? styles.bubbleFillMine : styles.bubbleFillTheirs,
+                    ]}
+                  >
                     <LinearGradient
                       colors={
                         mine
@@ -470,6 +475,14 @@ const useStyles = makeStyles((colors, shadows) => ({
   bubbleBareTheirs: { borderColor: colors.borderStrong },
   // Its own clipping view, so the rounded corners hold without cutting the
   // shadow off the bubble itself.
+  /*
+    Die Füllung nimmt dieselben Ecken wie die Blase.
+
+    Vorher war sie rundum `radius.xl` gerundet, die Blase an einer Ecke aber nur
+    `radius.sm` – genau die Ecke, die zur sprechenden Person zeigt. Dort lag die
+    Füllung nicht an, und es blieb ein Stück der flachen Tönung darunter stehen,
+    das nach Hintergrund aussah.
+  */
   bubbleFill: {
     position: 'absolute',
     top: 0,
@@ -495,6 +508,8 @@ const useStyles = makeStyles((colors, shadows) => ({
     borderColor: colors.primary,
     borderBottomRightRadius: radius.sm,
   },
+  bubbleFillMine: { borderBottomRightRadius: radius.sm - 1 },
+  bubbleFillTheirs: { borderBottomLeftRadius: radius.sm - 1 },
   bubbleTheirs: {
     backgroundColor: colors.surfacePressed,
     borderColor: colors.border,

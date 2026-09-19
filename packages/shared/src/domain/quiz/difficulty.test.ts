@@ -72,13 +72,15 @@ describe('normalizeDifficulties', () => {
     expect(normalizeDifficulties(['easy', 'extreme'])).toEqual(['easy']);
   });
 
-  it('collapses a full selection to "all"', () => {
-    expect(normalizeDifficulties(['easy', 'medium', 'hard'])).toEqual([]);
+  it('behält eine vollständige Auswahl, statt sie einzudampfen', () => {
+    // Als Filter dasselbe wie [] – siehe isAllDifficulties –, in der Anzeige
+    // aber drei einzeln gewählte Stufen.
+    expect(normalizeDifficulties(['easy', 'medium', 'hard'])).toEqual(['easy', 'medium', 'hard']);
   });
 });
 
 describe('toggleDifficulty', () => {
-  it('adds a level to an empty ("all") selection', () => {
+  it('macht aus "alle" die eine angetippte Stufe', () => {
     expect(toggleDifficulty(ALL, 'medium')).toEqual(['medium']);
   });
 
@@ -86,8 +88,9 @@ describe('toggleDifficulty', () => {
     expect(toggleDifficulty(['easy'], 'hard')).toEqual(['easy', 'hard']);
   });
 
-  it('falls back to "all" once the third level is added', () => {
-    expect(toggleDifficulty(['easy', 'hard'], 'medium')).toEqual([]);
+  it('behält alle drei einzeln, statt auf "alle" einzudampfen', () => {
+    // Als Filter dasselbe wie [], in der Anzeige aber drei markierte Stufen.
+    expect(toggleDifficulty(['easy', 'hard'], 'medium')).toEqual(['easy', 'medium', 'hard']);
   });
 
   it('removes a selected level', () => {

@@ -10,6 +10,8 @@ import { ModeStats } from '@/components/progress/ModeStats';
 import { AccuracyTrend, TREND_RANGES } from '@/components/progress/AccuracyTrend';
 import type { TrendRange } from '@/components/progress/AccuracyTrend';
 import { HistoryDialog } from '@/components/progress/HistoryDialog';
+import { PeriodPicker, periodLabel } from '@/components/progress/PeriodPicker';
+import type { Period } from '@/components/progress/PeriodPicker';
 import type { HistoryMetric, HistoryPart, HistoryShape } from '@/components/progress/HistoryDialog';
 import { StatGrid, StatTile } from '@/components/progress/StatTile';
 import { XpInfoDialog } from '@/components/quiz/XpInfoDialog';
@@ -19,7 +21,9 @@ import type { StatIconKey } from '@/content/statIcons';
 import { useMyDuelCount } from '@/features/friends/useFriends';
 import { useAnswerStats } from '@/features/progress/useAnswerStats';
 import { useAccuracyTrend } from '@/features/progress/useAccuracyTrend';
-import { useDailyHistory } from '@/features/progress/useDailyHistory';
+import { useHistory } from '@/features/progress/useHistory';
+import { usePlayedDays } from '@/features/progress/usePlayedDays';
+import { useTotals } from '@/features/progress/useTotals';
 import { usePerfectSessions } from '@/features/progress/usePerfectSessions';
 import { useProgress } from '@/features/progress/useProgress';
 import { useModeRecords } from '@/features/quiz/useModeRecords';
@@ -55,16 +59,41 @@ export default function AnalysisScreen() {
   // eigenen Verhalten überhaupt zeigt, ohne dass die Linie nur rauscht.
   const [trendDays, setTrendDays] = useState<TrendRange>(TREND_RANGES[0].days);
   const trend = useAccuracyTrend(trendDays);
-  const history = useDailyHistory();
+  /*
+    Der Zeitraum der sechs Kacheln. "Gesamt" als Vorgabe, weil das die Zahl ist,
+    nach der man zuerst sucht – und weil sie aus `user_progress` kommt und
+    deshalb ohne Rechnen da ist.
+  */
+  const [period, setPeriod] = useState<Period>(null);
+  const totals = useTotals(period);
+
+  // Derselbe Zeitraum wie die Kacheln: das Fenster, das eine Kachel öffnet,
+  // muss dieselbe Frage beantworten wie die Zahl darauf.
+  const history = useHistory(period);
+  // Nur für das Kalendergitter, und nur solange es offen ist.
+  const played = usePlayedDays(period, chart === 'streak');
   const duels = useMyDuelCount();
 
   const duelsPlayed = duels.count;
-
 
   const answered = answers.answered;
   const correct = answers.correct;
   const wrong = Math.max(0, answered - correct);
   const accuracy = computeAccuracy(correct, answered);
+  /*
+    Was die Kacheln zeigen. Solange noch nichts da ist, die Werte aus dem
+    Fortschritt – sonst stünden beim ersten Aufbau sechs Nullen, und das liest
+    sich wie ein leeres Konto und nicht wie "wird geladen".
+  */
+  const shown = totals.totals ?? {
+    answered,
+    correct,
+    wrong,
+    sessions: progress?.totalSessionsCompleted ?? 0,
+    perfect: perfect.count,
+    duels: duelsPlayed,
+    longestStreak: progress?.longestStreak ?? 0,
+  };
 
   /**
    * What each tile charts: the column of a day it reads, and how it is titled.
@@ -91,7 +120,7 @@ export default function AnalysisScreen() {
       value: `${progress?.longestStreak ?? 0} Tage`,
       metric: 'answered',
       tone: colors.danger,
-      shape: 'dots',
+      shape: 'calendar',
     },
     // Split by how they went: a day with three duels is a different day
     // depending on whether they were won or lost, and the colours say which
@@ -109,10 +138,33 @@ export default function AnalysisScreen() {
     },
     // Against the day's whole: seven right out of eight is a different day
     // from seven out of thirty.
-    correct: { title: 'Richtige Antworten', value: String(correct), metric: 'correct', tone: colors.success, against: 'answered' },
-    wrong: { title: 'Falsche Antworten', value: String(wrong), metric: 'wrong', tone: colors.danger, against: 'answered' },
-    sessions: { title: 'Beendete Quiz', value: String(progress?.totalSessionsCompleted ?? 0), metric: 'sessions', tone: colors.primary },
-    perfect: { title: 'Perfekte Quiz', value: String(perfect.count), metric: 'perfect', tone: colors.warning, against: 'sessions' },
+    correct: {
+      title: 'Richtige Antworten',
+      value: String(correct),
+      metric: 'correct',
+      tone: colors.success,
+      against: 'answered',
+    },
+    wrong: {
+      title: 'Falsche Antworten',
+      value: String(wrong),
+      metric: 'wrong',
+      tone: colors.danger,
+      against: 'answered',
+    },
+    sessions: {
+      title: 'Beendete Quiz',
+      value: String(progress?.totalSessionsCompleted ?? 0),
+      metric: 'sessions',
+      tone: colors.primary,
+    },
+    perfect: {
+      title: 'Perfekte Quiz',
+      value: String(perfect.count),
+      metric: 'perfect',
+      tone: colors.warning,
+      against: 'sessions',
+    },
   };
 
   return (
@@ -167,11 +219,22 @@ export default function AnalysisScreen() {
             value={String(streak)}
             label={streak === 1 ? 'Tag Streak' : 'Tage Streak'}
           />
-          <HeroStat icon="help" art="answered" color={colors.primary} value={String(answered)} label="beantwortet" />
-          <HeroStat icon="trophy" art="correct" color={colors.warning} value={`${accuracy} %`} label="Quote" />
+          <HeroStat
+            icon="help"
+            art="answered"
+            color={colors.primary}
+            value={String(answered)}
+            label="beantwortet"
+          />
+          <HeroStat
+            icon="trophy"
+            art="correct"
+            color={colors.warning}
+            value={`${accuracy} %`}
+            label="Quote"
+          />
         </View>
       </View>
-
 
       {/* Ganz oben, weil es die Frage beantwortet, mit der man die Seite
           öffnet: nicht "wie steht es", sondern "wird es besser". */}
@@ -189,55 +252,63 @@ export default function AnalysisScreen() {
         "Antworten" block of its own is two of these tiles now – a bar that
         said the same thing as the numbers beside it was a third telling.
       */}
-      <Section title="Insgesamt">
+      <Section
+        title={period === null ? 'Insgesamt' : periodLabel(period)}
+        action={<PeriodPicker value={period} onChange={setPeriod} />}
+      >
         <StatGrid>
           <StatTile
             label="Längste Streak"
-            value={`${progress?.longestStreak ?? 0} Tage`}
+            value={`${shown.longestStreak} Tage`}
             icon="flame"
             art="streak"
             tone={colors.danger}
+            loading={totals.isLoading}
             onPress={() => setChart('streak')}
           />
           <StatTile
             label="Duelle gespielt"
-            value={String(duelsPlayed)}
+            value={String(shown.duels)}
             icon="flash"
             art="duels"
             tone={colors.warning}
+            loading={totals.isLoading}
             onPress={() => setChart('duels')}
           />
           <StatTile
             label="Richtig"
-            value={`${correct}/${answered}`}
+            value={`${shown.correct}/${shown.answered}`}
             icon="checkmark-circle"
             art="correct"
             tone={colors.success}
+            loading={totals.isLoading}
             onPress={() => setChart('correct')}
           />
           <StatTile
             label="Falsch"
-            value={`${wrong}/${answered}`}
+            value={`${shown.wrong}/${shown.answered}`}
             icon="close-circle"
             art="wrong"
             tone={colors.danger}
+            loading={totals.isLoading}
             onPress={() => setChart('wrong')}
           />
           <StatTile
             label="Quiz beendet"
-            value={String(progress?.totalSessionsCompleted ?? 0)}
+            value={String(shown.sessions)}
             icon="checkmark-done"
             art="sessions"
             tone={colors.primary}
+            loading={totals.isLoading}
             onPress={() => setChart('sessions')}
           />
           <StatTile
             label="Perfekte Quiz"
-            value={String(perfect.count)}
+            value={String(shown.perfect)}
             icon="ribbon"
             art="perfect"
             tone={colors.warning}
-            loading={perfect.isLoading}
+            loading={totals.isLoading}
             onPress={() => setChart('perfect')}
           />
         </StatGrid>
@@ -245,9 +316,12 @@ export default function AnalysisScreen() {
 
       <Section title="Nach Modus">
         {/* Classic has no score to beat – it is the round without a rule. */}
-        <ModeStats recordFor={records.recordFor} loading={records.isLoading} includeClassic={false} />
+        <ModeStats
+          recordFor={records.recordFor}
+          loading={records.isLoading}
+          includeClassic={false}
+        />
       </Section>
-
 
       {/* A dialog, not an overlay: an overlay is positioned inside whatever
           holds it, and on a page that scrolls that is wherever the page happens
@@ -265,6 +339,8 @@ export default function AnalysisScreen() {
         parts={chart ? CHARTS[chart].parts : undefined}
         tone={chart ? CHARTS[chart].tone : colors.primary}
         days={history.days}
+        period={period}
+        playedDays={played.playedDays}
         loading={history.isLoading}
         onClose={() => setChart(null)}
       />
@@ -286,11 +362,21 @@ export default function AnalysisScreen() {
  * edges, and a box around a box read as a page built out of boxes rather than
  * as one that is divided into parts.
  */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   const styles = useStyles();
   return (
     <View style={styles.section}>
-      <SectionHeading title={title} />
+      {/* Steht  an, teilt es sich die Zeile mit der Überschrift –
+          etwa der Knopf für den Zeitraum. */}
+      <SectionHeading title={title} trailing={action} />
       <View style={styles.sectionBody}>{children}</View>
     </View>
   );
@@ -339,7 +425,13 @@ const useStyles = makeStyles((colors) => ({
     marginBottom: spacing.xl,
   },
   ringLabel: { fontSize: 9, letterSpacing: 1.4 },
-  ringNumber: { fontSize: 34, fontWeight: '900', letterSpacing: -0.8, lineHeight: 38, color: colors.textPrimary },
+  ringNumber: {
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+    lineHeight: 38,
+    color: colors.textPrimary,
+  },
   ringXp: { fontSize: 10 },
   heroStats: { flex: 1, gap: spacing.md },
   heroStat: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -350,5 +442,4 @@ const useStyles = makeStyles((colors) => ({
 
   section: { gap: spacing.md, marginBottom: spacing.xl },
   sectionBody: { gap: spacing.sm },
-
 }));

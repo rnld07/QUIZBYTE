@@ -1,6 +1,6 @@
 import { Pressable, View } from 'react-native';
 
-import { isAllDifficulties, toggleDifficulty } from '@quizbyte/shared';
+import { toggleDifficulty } from '@quizbyte/shared';
 import type { Difficulty } from '@quizbyte/shared';
 
 import { makeStyles, radius, spacing } from '@/theme';
@@ -22,15 +22,18 @@ interface DifficultyPickerProps {
 }
 
 /**
- * Difficulty selection: "Alle" plus the three levels, which can be combined.
+ * Schwierigkeit: "Alle" und die drei Stufen, beliebig kombinierbar.
  *
- * Picking every level is the same thing as "Alle", so the control snaps back to
- * it instead of showing three highlighted buttons and an unhighlighted "Alle"
- * that mean exactly the same.
+ * "Alle" ist der Ausgangszustand und leuchtet dann allein – die drei Stufen
+ * stehen dunkel daneben, weil keine davon einzeln gewählt ist. Tippt man sie
+ * einzeln an, leuchten sie einzeln, auch wenn am Ende alle drei markiert sind.
+ * Für den Filter ist beides dasselbe; für die Anzeige ist es das, was man
+ * angetippt hat.
  */
 export function DifficultyPicker({ value, onChange }: DifficultyPickerProps) {
   const styles = useStyles();
-  const all = isAllDifficulties(value);
+  // Nicht `isAllDifficulties`: das gilt auch für drei einzeln gewählte Stufen.
+  const all = value.length === 0;
 
   return (
     <View style={styles.track} accessibilityRole="radiogroup" accessibilityLabel="Schwierigkeit">
@@ -39,7 +42,7 @@ export function DifficultyPicker({ value, onChange }: DifficultyPickerProps) {
         <Segment
           key={level}
           label={DIFFICULTY_LABELS[level]}
-          active={!all && value.includes(level)}
+          active={value.includes(level)}
           onPress={() => onChange(toggleDifficulty(value, level))}
         />
       ))}

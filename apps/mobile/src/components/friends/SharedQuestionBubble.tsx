@@ -143,7 +143,10 @@ export function SharedQuestionBubble({ question, mine, answer, friendName, onOpe
             glyphSize={15}
             color={answer.isCorrect ? colors.success : colors.danger}
           />
-          <Text variant="caption" style={{ color: answer.isCorrect ? colors.success : colors.danger }}>
+          {/* `flex: 1` ist das Entscheidende: ohne das nimmt der Text seine
+              natürliche Breite und läuft bei einem langen Namen rechts aus der
+              Blase heraus, statt umzubrechen. */}
+          <Text variant="caption" style={[styles.footerText, { color: answer.isCorrect ? colors.success : colors.danger }]}>
             {mine ? `${friendName} hat ` : 'Du hast '}
             {answer.isCorrect ? 'richtig' : 'falsch'} geantwortet
           </Text>
@@ -203,5 +206,14 @@ const useStyles = makeStyles((colors) => ({
   },
   // Eingerückt wie der Inhalt darüber: bündig am Rand stieß das Symbol
   // direkt an die Kante der Blase.
-  footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.sm, paddingTop: 2 },
+  // `alignItems: 'flex-start'`, damit das Symbol bei zwei Zeilen Text oben
+  // bleibt statt in die Mitte zu rutschen.
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingTop: 2,
+  },
+  footerText: { flex: 1 },
 }));

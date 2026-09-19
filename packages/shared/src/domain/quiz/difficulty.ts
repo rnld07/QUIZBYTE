@@ -16,23 +16,35 @@ export function isAllDifficulties(selection: DifficultySelection): boolean {
   return selection.length === 0 || selection.length >= DIFFICULTIES.length;
 }
 
-/** Keeps a selection in the canonical order and free of duplicates. */
+/**
+ * Bringt eine Auswahl in die feste Reihenfolge und wirft Doppelte weg.
+ *
+ * Alle drei Stufen werden *nicht* mehr auf die leere Liste eingedampft: als
+ * Filter bedeuten beide dasselbe, aber in der Anzeige sind es zwei Zustände –
+ * "Alle" als eine Schaltfläche, oder drei einzeln gewählte Stufen. Wer sie
+ * einzeln antippt, will sie auch einzeln markiert sehen.
+ *
+ * `isAllDifficulties` behandelt beide gleich, damit am Filter selbst nichts
+ * davon ankommt.
+ */
 export function normalizeDifficulties(selection: readonly string[]): Difficulty[] {
   const wanted = new Set(selection);
-  const picked = DIFFICULTIES.filter((difficulty) => wanted.has(difficulty));
-  // Every level selected is the same as no filter at all.
-  return picked.length >= DIFFICULTIES.length ? [] : picked;
+  return DIFFICULTIES.filter((difficulty) => wanted.has(difficulty));
 }
 
 /**
- * Adds or removes one level.
+ * Fügt eine Stufe hinzu oder nimmt sie heraus.
  *
- * Two rules keep the control honest: selecting the last missing level falls back
- * to "all", and removing the last remaining one does too – a quiz without any
- * difficulty could not be played.
+ * Aus "Alle" heraus wird die angetippte Stufe die einzige – das ist der Griff,
+ * mit dem man einschränkt. Wer von dort alle drei einzeln anwählt, landet bei
+ * drei markierten Stufen und nicht wieder bei "Alle": als Filter dasselbe, als
+ * Anzeige aber das, was man angetippt hat.
+ *
+ * Die letzte verbliebene Stufe zu entfernen führt zurück auf "Alle" – ein Quiz
+ * ohne jede Schwierigkeit ließe sich nicht spielen.
  */
 export function toggleDifficulty(selection: DifficultySelection, difficulty: Difficulty): Difficulty[] {
-  const active = isAllDifficulties(selection) ? [] : selection;
+  const active = normalizeDifficulties(selection);
   const next = active.includes(difficulty) ? active.filter((entry) => entry !== difficulty) : [...active, difficulty];
   return normalizeDifficulties(next);
 }
