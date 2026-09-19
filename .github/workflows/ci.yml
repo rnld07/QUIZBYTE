@@ -1,8 +1,12 @@
 name: CI
 
 on:
+  # Every working branch, not just main: otherwise the checks only run once a
+  # pull request exists, and by then the mistake is already history.
   push:
-    branches: [main]
+    branches:
+      - main
+      - "claude/**"
   pull_request:
 
 jobs:

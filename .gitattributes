@@ -1,0 +1,14 @@
+# Keep line endings predictable no matter which platform clones the repo.
+# Without this the shell scripts can end up with CRLF and fail on Linux CI.
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.sql   text eol=lf
+
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.riv   binary
+*.ttf   binary
+*.otf   binary

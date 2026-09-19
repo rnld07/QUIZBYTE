@@ -37,16 +37,39 @@ end $$;
 
 update public.profiles set role = 'admin' where id = 'aaaaaaaa-0000-4000-8000-000000000002';
 
+-- 1b. Fixtures for the quiz rules --------------------------------------------------------------
+-- The scoring assertions below run against these three questions, not against the
+-- seeded content. Editorial numbers change with every content commit, and a smoke
+-- test that fails when a question is added tests the seed, not the rules.
+insert into public.categories (id, slug, name, is_active)
+values ('1f000000-0000-4000-8000-000000000001', 'smoke', 'Smoke', true);
+
+insert into public.questions
+  (id, category_id, subcategory, question_text, answer_a, answer_b, answer_c, answer_d,
+   correct_answer, explanation, difficulty, tags, status)
+values
+  ('2f000000-0000-4000-8000-000000000001', '1f000000-0000-4000-8000-000000000001', 'Smoke',
+   'Fixture easy', 'a', 'b', 'c', 'd', 'A', 'Fixture', 'easy', array['smoke', 'smoke-easy'], 'published'),
+  ('2f000000-0000-4000-8000-000000000002', '1f000000-0000-4000-8000-000000000001', 'Smoke',
+   'Fixture medium', 'a', 'b', 'c', 'd', 'B', 'Fixture', 'medium', array['smoke'], 'published'),
+  ('2f000000-0000-4000-8000-000000000003', '1f000000-0000-4000-8000-000000000001', 'Smoke',
+   'Fixture hard', 'a', 'b', 'c', 'd', 'C', 'Fixture', 'hard', array['smoke'], 'published');
+
 -- 2. Regular user: read access -----------------------------------------------------------------
 select public.__impersonate('aaaaaaaa-0000-4000-8000-000000000001');
 
 do $$
 declare v_count int; v_total int;
 begin
+  -- Both counts are compared against the tables instead of a fixed number: the
+  -- point of the view is that it shows exactly what the user may see, and that
+  -- stays true however many questions the editors add.
   select count(*) into v_count from public.categories_overview;
-  assert v_count = 6, format('user sees 6 active categories, got %s', v_count);
+  assert v_count = (select count(*) from public.categories),
+    format('overview lists every visible category, got %s', v_count);
   select sum(published_question_count) into v_total from public.categories_overview;
-  assert v_total = 47, format('47 published questions expected, got %s', v_total);
+  assert v_total = (select count(*) from public.questions),
+    format('overview counts every visible question, got %s', v_total);
   select count(*) into v_count from public.questions where status <> 'published';
   assert v_count = 0, 'users never see unpublished questions';
   select count(*) into v_count from public.profiles;
@@ -111,32 +134,35 @@ declare
   v_blocked boolean := false;
   v_count int;
 begin
-  select count(*) into v_count from public.get_session_questions('10000000-0000-4000-8000-000000000003', 10);
-  assert v_count = 8, format('8 published Netzwerke questions expected, got %s', v_count);
+  select count(*) into v_count from public.get_session_questions('1f000000-0000-4000-8000-000000000001', 10);
+  assert v_count = 3, format('a category returns exactly its published questions, got %s', v_count);
   select count(*) into v_count from public.get_session_questions(null, 10);
   assert v_count = 10, 'random session returns 10 questions';
-  select count(*) into v_count from public.get_training_questions(array['OSI-Modell'], array['dns'], '{}', 30);
+  select count(*) into v_count from public.get_training_questions(array['Smoke'], array['smoke-easy'], '{}', 30);
   assert v_count = 3, format('training pool by subcategory/tag, got %s', v_count);
 
   insert into public.quiz_sessions (user_id, category_id, session_type, total_questions)
-  values (auth.uid(), '10000000-0000-4000-8000-000000000003', 'category', 2)
+  values (auth.uid(), '1f000000-0000-4000-8000-000000000001', 'category', 2)
   returning id into v_session;
 
-  -- Client-sent is_correct / xp are ignored and recomputed.
+  -- Client-sent is_correct / xp are ignored and recomputed. The expected numbers
+  -- come from xp_for_answer(): 0 when wrong, otherwise 8 / 12 / 18 by difficulty.
   insert into public.quiz_attempts (user_id, question_id, quiz_session_id, selected_answer, is_correct, xp_earned, response_time_ms, answered_on)
-  values (auth.uid(), '20000000-0000-4000-8000-000000000001', v_session, 'C', false, 500, 1200, current_date - 1)
+  values (auth.uid(), '2f000000-0000-4000-8000-000000000001', v_session, 'A', false, 500, 1200, current_date - 1)
   returning * into v_attempt;
   assert v_attempt.is_correct = true, 'correct answer detected server-side';
-  assert v_attempt.xp_earned = 10, 'correct answer gives 10 xp';
+  assert v_attempt.xp_earned = public.xp_for_answer(true, 'easy'),
+    format('easy correct answer pays xp_for_answer(easy), got %s', v_attempt.xp_earned);
+  assert v_attempt.xp_earned = 8, format('xp_for_answer(easy) is 8, got %s', v_attempt.xp_earned);
 
   insert into public.quiz_attempts (user_id, question_id, quiz_session_id, selected_answer, answered_on)
-  values (auth.uid(), '20000000-0000-4000-8000-000000000002', v_session, 'A', current_date)
+  values (auth.uid(), '2f000000-0000-4000-8000-000000000002', v_session, 'A', current_date)
   returning * into v_attempt;
   assert v_attempt.is_correct = false, 'wrong answer detected';
-  assert v_attempt.xp_earned = 2, 'wrong answer gives 2 xp';
+  assert v_attempt.xp_earned = 0, format('a wrong answer pays nothing, got %s', v_attempt.xp_earned);
 
   select * into v_progress from public.user_progress where user_id = auth.uid();
-  assert v_progress.total_xp = 12, format('12 xp expected, got %s', v_progress.total_xp);
+  assert v_progress.total_xp = 8, format('8 xp expected, got %s', v_progress.total_xp);
   assert v_progress.total_questions_answered = 2;
   assert v_progress.total_correct_answers = 1;
   assert v_progress.current_streak = 2, format('streak extended to 2 (yesterday + today), got %s', v_progress.current_streak);
@@ -146,7 +172,7 @@ begin
   -- duplicates are rejected (idempotent offline retries)
   begin
     insert into public.quiz_attempts (user_id, question_id, quiz_session_id, selected_answer)
-    values (auth.uid(), '20000000-0000-4000-8000-000000000002', v_session, 'B');
+    values (auth.uid(), '2f000000-0000-4000-8000-000000000002', v_session, 'B');
   exception when unique_violation then v_blocked := true;
   end;
   assert v_blocked, 'duplicate attempt per session rejected';
@@ -155,27 +181,31 @@ begin
   v_blocked := false;
   begin
     insert into public.quiz_attempts (user_id, question_id, quiz_session_id, selected_answer)
-    values ('aaaaaaaa-0000-4000-8000-000000000003', '20000000-0000-4000-8000-000000000003', v_session, 'B');
+    values ('aaaaaaaa-0000-4000-8000-000000000003', '2f000000-0000-4000-8000-000000000003', v_session, 'B');
   exception when insufficient_privilege then v_blocked := true;
   end;
   assert v_blocked, 'attempt for other user rejected';
 
   v_result := public.complete_quiz_session(v_session);
   assert (v_result -> 'session' ->> 'completed_at') is not null, 'session completed';
-  assert (v_result -> 'session' ->> 'xp_earned')::int = 22, format('session xp 12 + 10 bonus, got %s', v_result -> 'session' ->> 'xp_earned');
+  -- 8 from the correct answer, no completion bonus (xp_for_session_completion() is 0).
+  assert (v_result -> 'session' ->> 'xp_earned')::int = 8 + public.xp_for_session_completion(),
+    format('session xp is the answers plus the bonus, got %s', v_result -> 'session' ->> 'xp_earned');
+  assert (v_result -> 'session' ->> 'xp_earned')::int = 8,
+    format('8 expected, got %s', v_result -> 'session' ->> 'xp_earned');
   assert (v_result -> 'session' ->> 'correct_answers')::int = 1;
-  assert (v_result -> 'progress' ->> 'total_xp')::int = 22;
+  assert (v_result -> 'progress' ->> 'total_xp')::int = 8;
   assert (v_result -> 'progress' ->> 'total_sessions_completed')::int = 1;
 
   -- completing twice is idempotent
   v_result := public.complete_quiz_session(v_session);
-  assert (v_result -> 'progress' ->> 'total_xp')::int = 22, 'no double bonus';
+  assert (v_result -> 'progress' ->> 'total_xp')::int = 8, 'no double bonus';
 
   -- no attempts after completion
   v_blocked := false;
   begin
     insert into public.quiz_attempts (user_id, question_id, quiz_session_id, selected_answer)
-    values (auth.uid(), '20000000-0000-4000-8000-000000000003', v_session, 'B');
+    values (auth.uid(), '2f000000-0000-4000-8000-000000000003', v_session, 'B');
   exception when check_violation then v_blocked := true;
   end;
   assert v_blocked, 'no attempts on completed sessions';
@@ -183,7 +213,7 @@ begin
   select count(*) into v_count from public.get_my_category_stats();
   assert v_count = 1, 'category stats for one category';
   select count(*) into v_count from public.get_my_topic_stats() where kind = 'tag';
-  assert v_count = 5, format('tag stats (osi,tcp,transport,dns,namensauflösung), got %s', v_count);
+  assert v_count = 2, format('tag stats (smoke, smoke-easy), got %s', v_count);
 end $$;
 
 -- 6. Other users cannot see these rows ----------------------------------------------------------------------
@@ -209,10 +239,15 @@ declare v_stats jsonb; v_rows int; v_blocked boolean := false; v_id uuid;
 begin
   assert public.is_admin(), 'admin detected';
   v_stats := public.get_admin_dashboard_stats();
-  assert (v_stats ->> 'questions_published')::int = 47;
-  assert (v_stats ->> 'categories_total')::int = 6;
+  assert (v_stats ->> 'questions_published')::int
+    = (select count(*) from public.questions where status = 'published'),
+    'dashboard counts the published questions';
+  assert (v_stats ->> 'categories_total')::int = (select count(*) from public.categories),
+    'dashboard counts every category';
 
-  update public.questions set status = 'archived' where id = '20000000-0000-4000-8000-000000000057';
+  -- The user answered this one above, so section 8 can check that an archived
+  -- question disappears from the catalogue but stays in the history.
+  update public.questions set status = 'archived' where id = '2f000000-0000-4000-8000-000000000002';
   get diagnostics v_rows = row_count;
   assert v_rows = 1, 'admin can update questions';
 
@@ -243,7 +278,7 @@ declare v_count int;
 begin
   select count(*) into v_count from public.categories where slug = 'cloud';
   assert v_count = 0, 'inactive category hidden';
-  select count(*) into v_count from public.questions where id = '20000000-0000-4000-8000-000000000057';
+  select count(*) into v_count from public.questions where id = '2f000000-0000-4000-8000-000000000002';
   assert v_count = 0, 'archived question hidden';
   -- history still counts archived questions
   select count(*) into v_count from public.get_my_category_stats();

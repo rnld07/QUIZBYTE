@@ -14,12 +14,28 @@ DB="quizbyte_verify"
 
 PG_BIN="${PG_BIN:-}"
 if [[ -z "$PG_BIN" ]]; then
-  for candidate in /usr/lib/postgresql/*/bin /opt/homebrew/opt/postgresql@16/bin /usr/local/pgsql/bin; do
+  # The last match wins, so a newer installation overrides an older one.
+  # The Windows paths are for Git Bash (/c/...) and WSL (/mnt/c/...).
+  for candidate in \
+    /usr/lib/postgresql/*/bin \
+    /opt/homebrew/opt/postgresql@*/bin \
+    /usr/local/pgsql/bin \
+    /c/Program\ Files/PostgreSQL/*/bin \
+    /mnt/c/Program\ Files/PostgreSQL/*/bin; do
     if [[ -x "$candidate/initdb" ]]; then PG_BIN="$candidate"; fi
   done
 fi
 if [[ -z "$PG_BIN" || ! -x "$PG_BIN/initdb" ]]; then
-  echo "initdb not found. Set PG_BIN=/path/to/postgres/bin" >&2
+  cat >&2 <<'MSG'
+initdb not found. This script needs the PostgreSQL *server* binaries, not just psql.
+
+  Linux    sudo apt install postgresql-16
+  macOS    brew install postgresql@16
+  Windows  install PostgreSQL, then run this from Git Bash or WSL, e.g.
+             PG_BIN="/c/Program Files/PostgreSQL/16/bin" pnpm db:verify
+
+Set PG_BIN to the directory that contains initdb, pg_ctl and psql.
+MSG
   exit 1
 fi
 
