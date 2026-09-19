@@ -145,10 +145,12 @@ begin
   values (auth.uid(), '1f000000-0000-4000-8000-000000000001', 'category', 2)
   returning id into v_session;
 
-  -- Client-sent is_correct / xp are ignored and recomputed. The expected numbers
-  -- come from xp_for_answer(): 0 when wrong, otherwise 8 / 12 / 18 by difficulty.
-  insert into public.quiz_attempts (user_id, question_id, quiz_session_id, selected_answer, is_correct, xp_earned, response_time_ms, answered_on)
-  values (auth.uid(), '2f000000-0000-4000-8000-000000000001', v_session, 'A', false, 500, 1200, current_date - 1)
+  -- is_correct and xp_earned are the server's; since 20260919007700 the client
+  -- cannot even name those columns (security.sql proves that). What is checked
+  -- here is the arithmetic: xp_for_answer() gives 0 when wrong, otherwise
+  -- 8 / 12 / 18 by difficulty.
+  insert into public.quiz_attempts (user_id, question_id, quiz_session_id, selected_answer, response_time_ms, answered_on)
+  values (auth.uid(), '2f000000-0000-4000-8000-000000000001', v_session, 'A', 1200, current_date - 1)
   returning * into v_attempt;
   assert v_attempt.is_correct = true, 'correct answer detected server-side';
   assert v_attempt.xp_earned = public.xp_for_answer(true, 'easy'),

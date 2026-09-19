@@ -1245,6 +1245,14 @@ export type Database = {
         Args: { p_username: string };
         Returns: boolean;
       };
+      require_active_user: {
+        Args: Record<PropertyKey, never>;
+        Returns: string;
+      };
+      require_signed_in_user: {
+        Args: Record<PropertyKey, never>;
+        Returns: string;
+      };
       reset_my_progress: {
         Args: Record<PropertyKey, never>;
         Returns: undefined;

@@ -37,6 +37,14 @@ const USER_MESSAGES: Record<AppErrorCode, string> = {
   unknown: 'Etwas ist schiefgelaufen. Bitte versuche es erneut.',
 };
 
+/**
+ * Ein gesperrtes Konto darf lesen und zu Ende spielen, aber nichts Neues
+ * anfangen. Ohne diese Zeile faende es sich unter "Sitzung abgelaufen" wieder –
+ * und wuerde die App immer wieder neu starten, weil die Meldung das nahelegt.
+ */
+const SUSPENDED_MESSAGE =
+  'Dein Konto ist gesperrt. Du kannst weiter lesen, aber nichts Neues starten. Melde dich beim Support, wenn du das für einen Fehler hältst.';
+
 const MISSING_FUNCTION_MESSAGE =
   'Diese Funktion fehlt noch in der Datenbank. Bitte spiele die ausstehenden Migrationen ein (supabase db push).';
 
@@ -63,7 +71,11 @@ export function toAppError(error: unknown, fallbackMessage?: string): AppError {
     const status = error.status;
     const code = error.code ?? '';
     if (status === 401 || status === 403 || code === '42501' || code === 'PGRST301') {
-      return new AppError('unauthorized', USER_MESSAGES.unauthorized, error);
+      // Dieselbe Sperre, zwei Ursachen: abgelaufene Sitzung oder gesperrtes
+      // Konto. Den Unterschied kennt nur der Text, den require_active_user()
+      // mitschickt.
+      const suspended = (error.message ?? '').includes('account is suspended');
+      return new AppError('unauthorized', suspended ? SUSPENDED_MESSAGE : USER_MESSAGES.unauthorized, error);
     }
     // PostgREST reports an unknown function this way – almost always a
     // migration that has not been pushed yet.

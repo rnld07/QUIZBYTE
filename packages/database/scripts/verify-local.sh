@@ -75,4 +75,7 @@ echo "Applying seed…"
 echo "Running smoke tests…"
 "${PSQL[@]}" -d "$DB" -f "$HERE/scripts/local/smoke.sql" | tail -n 3
 
-echo "OK – migrations, seed and RLS smoke tests passed."
+echo "Running access-control tests…"
+"${PSQL[@]}" -d "$DB" -f "$HERE/scripts/local/security.sql" | tail -n 3
+
+echo "OK – migrations, seed, RLS smoke tests and access-control tests passed."
