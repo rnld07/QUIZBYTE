@@ -6,9 +6,11 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 
 import { AuthScreen } from '@/components/auth/AuthScreen';
+import { NewPasswordScreen } from '@/components/auth/NewPasswordScreen';
 import { SuspendedScreen } from '@/components/auth/SuspendedScreen';
 import { Button, Text } from '@/components/ui';
 import { useAuthBootstrap } from '@/features/auth/useAuthBootstrap';
+import { usePasswordRecovery } from '@/features/auth/usePasswordRecovery';
 import { useFeatureSync } from '@/features/flags/useFeatureSync';
 import { useProfile } from '@/features/profile/useProfile';
 import { queryClient } from '@/services/query/queryClient';
@@ -69,6 +71,10 @@ function AuthGate() {
   const styles = useStyles();
   const colors = useThemeColors();
   const { status, errorMessage, retry } = useAuthBootstrap();
+  // Der Link aus der "Passwort vergessen"-Mail. Er bringt eine Sitzung mit,
+  // meldet also an – und genau deshalb steht das Setzen des neuen Passworts
+  // vor allem anderen.
+  const recovery = usePasswordRecovery();
   // Einmal je Sitzung, sobald die App steht – siehe useFeatureSync.
   useFeatureSync();
   const isGuest = useAuthStore((state) => state.isGuest);
@@ -96,6 +102,10 @@ function AuthGate() {
         <Button title="Erneut versuchen" onPress={() => void retry()} style={styles.retry} />
       </View>
     );
+  }
+
+  if (recovery.active) {
+    return <NewPasswordScreen linkError={recovery.error} onDone={recovery.dismiss} />;
   }
 
   if (status === 'signed-out') {

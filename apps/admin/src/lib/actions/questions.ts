@@ -4,11 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import type { Enums, TablesInsert } from '@quizbyte/database';
-import { parseTagList, questionInputSchema, validateQuestionForPublish } from '@quizbyte/shared';
+import { parseTagList, questionDraftSchema, questionInputSchema, validateQuestionForPublish } from '@quizbyte/shared';
 import type { QuestionValidationIssue } from '@quizbyte/shared';
 
 import { requireAdmin } from '@/lib/auth';
-import { storeQuestionMedia, validateMediaFile } from '@/lib/media/questionMedia';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export type QuestionIntent = 'save' | 'draft' | 'review' | 'publish' | 'archive';
@@ -69,8 +68,16 @@ export async function saveQuestionAction(
     }
   }
 
-  // Drafts may be incomplete – parse leniently but keep types safe.
-  const parsed = questionInputSchema.partial().safeParse({ ...form, status: nextStatus });
+  /*
+    Entwuerfe duerfen Luecken haben – aber Laengen und Typen gelten trotzdem.
+
+    Vorher stand hier `questionInputSchema.partial()`. Das erlaubt *fehlende*
+    Felder, nicht leere, und das Formular schickt immer alle: ein Entwurf ohne
+    Erklaerung scheiterte an "Erklaerung darf nicht leer sein", obwohl die
+    Datenbank genau dafuer den Status `draft` kennt.
+  */
+  const schema = nextStatus === 'published' ? questionInputSchema : questionDraftSchema;
+  const parsed = schema.safeParse({ ...form, status: nextStatus });
   if (!parsed.success) {
     return {
       error: 'Ungültige Eingabe.',
@@ -101,19 +108,8 @@ export async function saveQuestionAction(
     duel_pool: form.duelPool,
   };
 
-  // Files picked while creating the question. Checked before anything is
-  // written: a file that is too big must not leave a saved question behind.
-  const pickedImage = formData.get('imageFile');
-  const pickedAudio = formData.get('audioFile');
-  const imageFile = pickedImage instanceof File && pickedImage.size > 0 ? pickedImage : null;
-  const audioFile = pickedAudio instanceof File && pickedAudio.size > 0 ? pickedAudio : null;
-  for (const [kind, file] of [['image', imageFile], ['audio', audioFile]] as const) {
-    const invalid = file ? validateMediaFile(kind, file) : null;
-    if (invalid) {
-      return { error: invalid, issues: [{ field: kind === 'image' ? 'imageFile' : 'audioFile', message: invalid }], savedAt: null };
-    }
-  }
-
+  // Dateien kommen nicht mehr durch diese Action: sie liegen schon im Bucket,
+  // vom Browser aus hochgeladen, und im Formular steht nur noch ihre URL.
   const supabase = await createSupabaseServerClient();
   let id = questionId;
   if (id) {
@@ -129,18 +125,10 @@ export async function saveQuestionAction(
     id = data.id;
   }
 
-  // The upload needs the question id, so it can only run now. A failure here
-  // leaves the question itself intact – the detail page says so and offers a
-  // retry rather than throwing the entered text away.
-  let mediaFailed = false;
-  if (imageFile) mediaFailed = Boolean((await storeQuestionMedia(id, 'image', imageFile)).error) || mediaFailed;
-  if (audioFile) mediaFailed = Boolean((await storeQuestionMedia(id, 'audio', audioFile)).error) || mediaFailed;
-
   revalidatePath('/questions');
   revalidatePath('/dashboard');
-  if (!questionId) redirect(`/questions/${id}${mediaFailed ? '?media=failed' : ''}`);
+  if (!questionId) redirect(`/questions/${id}`);
   revalidatePath(`/questions/${id}`);
-  if (mediaFailed) return { error: 'Die Frage ist gespeichert, aber die Datei konnte nicht hochgeladen werden.', issues: [], savedAt: null };
   return { error: null, issues: [], savedAt: new Date().toISOString() };
 }
 

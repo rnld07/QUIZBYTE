@@ -715,6 +715,24 @@ export type Database = {
         Args: { p_duel_id: string };
         Returns: boolean;
       };
+      get_conversation_page: {
+        Args: {
+          p_friend_id: string;
+          p_limit?: number;
+          p_before?: string;
+          p_before_id?: string;
+        };
+        Returns: {
+          id: string;
+          sender_id: string;
+          kind: Database['public']['Enums']['message_kind'];
+          question_id: string | null;
+          duel_id: string | null;
+          created_at: string;
+          answer: Json;
+          duel: Json;
+        }[];
+      };
       get_conversation: {
         Args: { p_friend_id: string; p_limit?: number };
         Returns: {

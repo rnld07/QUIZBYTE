@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 
-import { linkAccount, sendPasswordReset, signIn, signOut, signUp } from '@/services/auth/authService';
+import { linkAccount, sendPasswordReset, setNewPassword, signIn, signOut, signUp } from '@/services/auth/authService';
 import type { Credentials, LinkResult, SignUpInput, SignUpResult } from '@/services/auth/authService';
 import { useAuthStore } from '@/state/authStore';
 
@@ -39,4 +39,9 @@ export function useSignOut() {
 
 export function usePasswordReset() {
   return useMutation<void, Error, string>({ mutationFn: sendPasswordReset });
+}
+
+/** Setzt ein neues Passwort – nach dem Link aus der Mail. */
+export function useSetNewPassword() {
+  return useMutation<void, Error, string>({ mutationFn: setNewPassword });
 }

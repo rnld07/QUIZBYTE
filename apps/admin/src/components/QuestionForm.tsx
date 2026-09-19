@@ -1,11 +1,13 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import type { Tables } from '@quizbyte/database';
 import { Constants } from '@quizbyte/database';
 
 import { saveQuestionAction } from '@/lib/actions/questions';
+import { uploadQuestionMedia } from '@/lib/media/questionMedia';
+import type { MediaKind } from '@/lib/media/mediaLimits';
 import type { QuestionActionState, QuestionIntent } from '@/lib/actions/questions';
 import type { CategoryOverviewRow } from '@/lib/queries/categories';
 
@@ -25,9 +27,40 @@ const ANSWER_FIELDS = [
   { key: 'D', name: 'answerD', column: 'answer_d' },
 ] as const;
 
+/** Die beiden Dateifelder: hochladen im Browser, Adresse ins Formular. */
+function useMediaFields(question: Tables<'questions'> | null) {
+  const [image, setImage] = useState<MediaFieldState>({ url: question?.image_url ?? '', error: null, pending: false });
+  const [audio, setAudio] = useState<MediaFieldState>({ url: question?.audio_url ?? '', error: null, pending: false });
+
+  const setState = (kind: MediaKind, next: MediaFieldState) => (kind === 'image' ? setImage(next) : setAudio(next));
+
+  return {
+    image,
+    audio,
+    setUrl: (kind: MediaKind, url: string) => setState(kind, { url, error: null, pending: false }),
+    upload: async (kind: MediaKind, file: File | null) => {
+      if (!file) return;
+      setState(kind, { url: kind === 'image' ? image.url : audio.url, error: null, pending: true });
+      const uploaded = await uploadQuestionMedia(kind, file);
+      setState(kind, {
+        url: uploaded.url ?? (kind === 'image' ? image.url : audio.url),
+        error: uploaded.error,
+        pending: false,
+      });
+    },
+  };
+}
+
+interface MediaFieldState {
+  url: string;
+  error: string | null;
+  pending: boolean;
+}
+
 export function QuestionForm({ question, categories }: QuestionFormProps) {
   const action = saveQuestionAction.bind(null, question?.id ?? null);
   const [state, formAction, pending] = useActionState(action, initialState);
+  const media = useMediaFields(question);
   const issueFor = (field: string): string | undefined => state.issues.find((issue) => issue.field === field)?.message;
   const status = question?.status ?? 'draft';
 
@@ -126,37 +159,63 @@ export function QuestionForm({ question, categories }: QuestionFormProps) {
       </div>
 
       {/*
-        A new question has no id yet, so the media panel beside the form cannot
-        exist. The files ride along with the form instead and are uploaded right
-        after the question is created.
-      */}
-      {question === null ? (
-        <div className="grid grid--2">
-          <div className="field">
-            <label htmlFor="imageFile">Bild (1:1)</label>
-            <input id="imageFile" name="imageFile" type="file" className="input" accept="image/png,image/jpeg,image/webp" />
-            <p className="help">PNG, JPG oder WEBP, bis 5 MB. Optional.</p>
-            {issueFor('imageFile') ? <p className="error">{issueFor('imageFile')}</p> : null}
-          </div>
-          <div className="field">
-            <label htmlFor="audioFile">Audio</label>
-            <input id="audioFile" name="audioFile" type="file" className="input" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav" />
-            <p className="help">MP3, M4A, AAC oder WAV, bis 10 MB. Optional – lässt sich später auch generieren.</p>
-            {issueFor('audioFile') ? <p className="error">{issueFor('audioFile')}</p> : null}
-          </div>
-        </div>
-      ) : null}
+        Hochgeladen wird direkt in den Bucket, nicht durch das Formular.
 
+        Eine neue Frage hat noch keine Id – frueher ritten die Dateien deshalb
+        im Formular mit und wurden nach dem Anlegen hochgeladen, durch eine
+        Server-Action mit einem Rumpflimit von einem Megabyte. Ein Bild darf
+        fuenf haben. Jetzt laedt der Browser die Datei, sobald sie gewaehlt ist,
+        und traegt die Adresse in das Feld darunter ein – vor dem Speichern und
+        unabhaengig davon, ob die Frage schon existiert.
+      */}
       <div className="grid grid--2">
         <div className="field">
-          <label htmlFor="imageUrl">Bild-URL</label>
-          <input id="imageUrl" name="imageUrl" className="input" defaultValue={question?.image_url ?? ''} placeholder="https://…" />
-          <p className="help">Wird beim Hochladen automatisch gesetzt.</p>
+          <label htmlFor="imageUrl">Bild (1:1)</label>
+          <input
+            id="imageFile"
+            type="file"
+            className="input"
+            accept="image/png,image/jpeg,image/webp"
+            disabled={media.image.pending}
+            onChange={(event) => void media.upload('image', event.target.files?.[0] ?? null)}
+          />
+          <input
+            id="imageUrl"
+            name="imageUrl"
+            className="input"
+            value={media.image.url}
+            onChange={(event) => media.setUrl('image', event.target.value)}
+            placeholder="https://…"
+          />
+          <p className="help">
+            {media.image.pending ? 'Wird hochgeladen…' : 'PNG, JPG oder WEBP, bis 5 MB. Optional.'}
+          </p>
+          {media.image.error ? <p className="error">{media.image.error}</p> : null}
         </div>
         <div className="field">
-          <label htmlFor="audioUrl">Audio-URL</label>
-          <input id="audioUrl" name="audioUrl" className="input" defaultValue={question?.audio_url ?? ''} placeholder="https://…" />
-          <p className="help">Wird beim Hochladen automatisch gesetzt.</p>
+          <label htmlFor="audioUrl">Audio</label>
+          <input
+            id="audioFile"
+            type="file"
+            className="input"
+            accept="audio/mpeg,audio/mp4,audio/aac,audio/wav"
+            disabled={media.audio.pending}
+            onChange={(event) => void media.upload('audio', event.target.files?.[0] ?? null)}
+          />
+          <input
+            id="audioUrl"
+            name="audioUrl"
+            className="input"
+            value={media.audio.url}
+            onChange={(event) => media.setUrl('audio', event.target.value)}
+            placeholder="https://…"
+          />
+          <p className="help">
+            {media.audio.pending
+              ? 'Wird hochgeladen…'
+              : 'MP3, M4A, AAC oder WAV, bis 10 MB. Optional – lässt sich später auch generieren.'}
+          </p>
+          {media.audio.error ? <p className="error">{media.audio.error}</p> : null}
         </div>
       </div>
 

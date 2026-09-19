@@ -1,9 +1,10 @@
 'use client';
 
-import { useActionState, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 
-import { removeQuestionMediaAction, uploadQuestionMediaAction } from '@/lib/actions/media';
-import type { MediaActionState } from '@/lib/actions/media';
+import { removeQuestionMediaAction, setQuestionMediaUrlAction } from '@/lib/actions/media';
+import { uploadQuestionMedia } from '@/lib/media/questionMedia';
+import type { MediaKind } from '@/lib/media/mediaLimits';
 
 interface MediaPanelProps {
   questionId: string;
@@ -11,15 +12,47 @@ interface MediaPanelProps {
   audioUrl: string | null;
 }
 
-const initialState: MediaActionState = { error: null, url: null };
+interface UploadState {
+  error: string | null;
+  url: string | null;
+  pending: boolean;
+}
 
-/** Image + audio management for one question (upload, replace, remove, generate). */
+const idle: UploadState = { error: null, url: null, pending: false };
+
+/**
+ * Image + audio management for one question (upload, replace, remove, generate).
+ *
+ * Die Datei geht direkt in den Bucket und nicht durch eine Server-Action: die
+ * hat in Next.js ein Rumpflimit von einem Megabyte, und daran scheiterte jedes
+ * Bild ueber dieser Groesse, bevor die eigene Pruefung ueberhaupt lief. An den
+ * Server geht danach nur noch die Adresse.
+ */
 export function MediaPanel({ questionId, imageUrl, audioUrl }: MediaPanelProps) {
-  const uploadImage = uploadQuestionMediaAction.bind(null, questionId, 'image');
-  const uploadAudio = uploadQuestionMediaAction.bind(null, questionId, 'audio');
-  const [imageState, imageAction, imagePending] = useActionState(uploadImage, initialState);
-  const [audioState, audioAction, audioPending] = useActionState(uploadAudio, initialState);
+  const [imageState, setImageState] = useState<UploadState>(idle);
+  const [audioState, setAudioState] = useState<UploadState>(idle);
   const [removing, startRemove] = useTransition();
+
+  const upload = async (kind: MediaKind, file: File | null) => {
+    const setState = kind === 'image' ? setImageState : setAudioState;
+    if (!file) {
+      setState({ ...idle, error: 'Bitte eine Datei auswählen.' });
+      return;
+    }
+
+    setState({ error: null, url: null, pending: true });
+    const uploaded = await uploadQuestionMedia(kind, file);
+    if (uploaded.error) {
+      setState({ error: uploaded.error, url: null, pending: false });
+      return;
+    }
+
+    const saved = await setQuestionMediaUrlAction(questionId, kind, uploaded.url ?? '');
+    setState({ error: saved.error, url: saved.url, pending: false });
+  };
+
+  const imagePending = imageState.pending;
+  const audioPending = audioState.pending;
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
@@ -62,10 +95,17 @@ export function MediaPanel({ questionId, imageUrl, audioUrl }: MediaPanelProps) 
           <p className="help">Kein Bild hinterlegt.</p>
         )}
         {imageState.error ? <div className="error">{imageState.error}</div> : null}
-        <form action={imageAction} className="btn-row">
+        <form
+          className="btn-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const input = event.currentTarget.elements.namedItem('file');
+            void upload('image', input instanceof HTMLInputElement ? (input.files?.[0] ?? null) : null);
+          }}
+        >
           <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required />
           <button type="submit" className="btn btn--sm" disabled={imagePending}>
-            {currentImage ? 'Ersetzen' : 'Hochladen'}
+            {imagePending ? 'Wird hochgeladen…' : currentImage ? 'Ersetzen' : 'Hochladen'}
           </button>
           {currentImage ? (
             <button
@@ -88,10 +128,18 @@ export function MediaPanel({ questionId, imageUrl, audioUrl }: MediaPanelProps) 
           <p className="help">Kein Audio hinterlegt.</p>
         )}
         {audioState.error ? <div className="error">{audioState.error}</div> : null}
-        <form action={audioAction} className="btn-row" style={{ marginBottom: 10 }}>
+        <form
+          className="btn-row"
+          style={{ marginBottom: 10 }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const input = event.currentTarget.elements.namedItem('file');
+            void upload('audio', input instanceof HTMLInputElement ? (input.files?.[0] ?? null) : null);
+          }}
+        >
           <input type="file" name="file" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav" required />
           <button type="submit" className="btn btn--sm" disabled={audioPending}>
-            {currentAudio ? 'Ersetzen' : 'Hochladen'}
+            {audioPending ? 'Wird hochgeladen…' : currentAudio ? 'Ersetzen' : 'Hochladen'}
           </button>
           {currentAudio ? (
             <button

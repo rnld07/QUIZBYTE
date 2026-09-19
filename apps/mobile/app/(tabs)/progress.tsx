@@ -22,6 +22,7 @@ import { useStats } from '@/features/progress/useStats';
 import { useCategories } from '@/features/quiz/useCategories';
 import { useStartQuiz } from '@/features/quiz/useStartQuiz';
 import type { QuestionOutcomeFilter } from '@/services/api/questionsApi';
+import { useFeature } from '@/state/featureStore';
 import { getUserMessage } from '@/services/errors';
 import { makeStyles, radius, spacing, useThemeColors } from '@/theme';
 
@@ -42,6 +43,8 @@ export default function ProgressScreen() {
   const saved = useSavedQuestions();
   const toggleSaved = useToggleSavedQuestion();
   const startQuiz = useStartQuiz();
+  // Ohne den Schalter kein Einstieg ins Schwaechentraining.
+  const weaknessEnabled = useFeature('weaknessTraining');
   const categories = useCategories();
   const router = useRouter();
   // Only a real pull-to-refresh may drive the RefreshControl. Binding it to the
@@ -177,7 +180,10 @@ export default function ProgressScreen() {
         )}
       </View>
 
-      {/* Replay every wrongly answered question */}
+      {/* Replay every wrongly answered question. Ohne den Schalter gibt es den
+          Abschnitt nicht – ein Einstieg, der ins Leere fuehrt, ist schlimmer
+          als keiner. */}
+      {weaknessEnabled ? (
       <View style={styles.section}>
         <SectionHeading title="Schwächen trainieren" />
         <Pressable
@@ -244,6 +250,7 @@ export default function ProgressScreen() {
         </Pressable>
         {startQuiz.error ? <Text color="danger">{startQuiz.error}</Text> : null}
       </View>
+      ) : null}
 
       {/* The questions bookmarked in the quiz – nothing lands here by itself */}
       <View style={styles.section}>

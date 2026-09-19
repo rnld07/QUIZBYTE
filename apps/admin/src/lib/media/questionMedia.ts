@@ -1,47 +1,31 @@
-import { STORAGE_BUCKETS } from '@quizbyte/database';
-import type { TablesUpdate } from '@quizbyte/database';
+import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { extensionFor, MEDIA_LIMITS, validateMediaFile } from './mediaLimits';
+import type { MediaKind } from './mediaLimits';
 
-export type MediaKind = 'image' | 'audio';
-
-export const MEDIA_LIMITS: Record<MediaKind, { bucket: string; maxBytes: number; column: 'image_url' | 'audio_url'; accept: string[] }> = {
-  image: {
-    bucket: STORAGE_BUCKETS.questionImages,
-    maxBytes: 5 * 1024 * 1024,
-    column: 'image_url',
-    accept: ['image/png', 'image/jpeg', 'image/webp'],
-  },
-  audio: {
-    bucket: STORAGE_BUCKETS.questionAudio,
-    maxBytes: 10 * 1024 * 1024,
-    column: 'audio_url',
-    accept: ['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav'],
-  },
-};
-
-function extensionFor(file: File): string {
-  const fromName = file.name.split('.').pop()?.toLowerCase();
-  if (fromName && fromName.length <= 5) return fromName;
-  return file.type.split('/').pop() ?? 'bin';
-}
+export { MEDIA_LIMITS, validateMediaFile };
+export type { MediaKind };
 
 /**
- * Checks a file without touching the network.
+ * Laedt eine Datei aus dem Browser in ihren Bucket.
  *
- * Kept separate so a new question can be rejected *before* it is created –
- * otherwise a file that is too large would leave a saved question behind.
+ * Vorher ging sie durch eine Server-Action, und die haben in Next.js ein
+ * Standardlimit von einem Megabyte fuer den Rumpf – ein Bild darf aber fuenf
+ * haben, Audio zehn. Die Grenze schlug also zu, *bevor* `validateMediaFile` je
+ * lief, und die Fehlermeldung sprach von etwas anderem als dem, was passiert
+ * war.
+ *
+ * Das Limit hochzusetzen waere die kleinere Antwort gewesen: die Datei liefe
+ * weiterhin durch den Server, nur langsamer und mit mehr Speicherbedarf. Den
+ * Weg gibt es schon woanders – die Lernzettel laden seit jeher direkt in den
+ * Bucket (StudySheetForm), mit der Sitzung des Admins und den Regeln aus
+ * `20260909000700_storage.sql`.
+ *
+ * Der Ordner braucht keine Frage-Id: eine neue Frage hat noch keine, und ein
+ * Upload, der auf das Speichern warten muss, war genau der Grund, warum ein
+ * fehlgeschlagener Upload bisher eine halbfertige Frage hinterliess.
  */
-export function validateMediaFile(kind: MediaKind, file: File): string | null {
-  const limit = MEDIA_LIMITS[kind];
-  if (file.size > limit.maxBytes) return 'Die Datei ist zu groß.';
-  if (!limit.accept.includes(file.type)) return `Dateityp ${file.type || 'unbekannt'} wird nicht unterstützt.`;
-  return null;
-}
-
-/** Puts the file in its bucket and writes the public URL onto the question. */
-export async function storeQuestionMedia(
-  questionId: string,
+export async function uploadQuestionMedia(
   kind: MediaKind,
   file: File,
 ): Promise<{ url: string; error: null } | { url: null; error: string }> {
@@ -49,17 +33,13 @@ export async function storeQuestionMedia(
   if (invalid) return { url: null, error: invalid };
 
   const limit = MEDIA_LIMITS[kind];
-  const supabase = await createSupabaseServerClient();
-  const path = `${questionId}/${Date.now()}.${extensionFor(file)}`;
-  const { error: uploadError } = await supabase.storage
+  const supabase = createSupabaseBrowserClient();
+  const path = `${Date.now()}-${crypto.randomUUID()}.${extensionFor(file)}`;
+
+  const { error } = await supabase.storage
     .from(limit.bucket)
     .upload(path, file, { contentType: file.type, upsert: false, cacheControl: '31536000' });
-  if (uploadError) return { url: null, error: `Upload fehlgeschlagen: ${uploadError.message}` };
+  if (error) return { url: null, error: `Upload fehlgeschlagen: ${error.message}` };
 
-  const { data } = supabase.storage.from(limit.bucket).getPublicUrl(path);
-  const patch: TablesUpdate<'questions'> = kind === 'image' ? { image_url: data.publicUrl } : { audio_url: data.publicUrl };
-  const { error } = await supabase.from('questions').update(patch).eq('id', questionId);
-  if (error) return { url: null, error: `Speichern fehlgeschlagen: ${error.message}` };
-
-  return { url: data.publicUrl, error: null };
+  return { url: supabase.storage.from(limit.bucket).getPublicUrl(path).data.publicUrl, error: null };
 }

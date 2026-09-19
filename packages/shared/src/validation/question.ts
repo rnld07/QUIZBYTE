@@ -44,6 +44,35 @@ export const questionInputSchema = z.object({
 
 export type QuestionInput = z.infer<typeof questionInputSchema>;
 
+/**
+ * Ein Entwurf, halbfertig.
+ *
+ * `questionInputSchema.partial()` sieht nach der Antwort darauf aus, ist es
+ * aber nicht: `partial()` macht Felder *weglassbar*, nicht *leer*. Das
+ * Adminformular schickt aber immer alle Felder – die unausgefuellten als
+ * leeren Text. Ein Entwurf mit leerer Erklaerung scheiterte deshalb an
+ * "Erklaerung darf nicht leer sein", obwohl die Datenbank ihn laengst erlaubt
+ * und genau dafuer den Status `draft` hat.
+ *
+ * Dieselben Typen, dieselben Obergrenzen, nur ohne die Mindestlaengen. Was
+ * zum Veroeffentlichen noetig ist, prueft weiterhin
+ * {@link validateQuestionForPublish} – und zwar dann, wenn wirklich
+ * veroeffentlicht wird.
+ */
+export const questionDraftSchema = questionInputSchema.extend({
+  categoryId: z.string().uuid('Kategorie fehlt.'),
+  questionText: z.string().trim().max(1000),
+  answerA: z.string().trim().max(300),
+  answerB: z.string().trim().max(300),
+  answerC: z.string().trim().max(300),
+  answerD: z.string().trim().max(300),
+  correctAnswer: z.enum(ANSWER_KEYS, { message: 'Richtige Antwort muss A, B, C oder D sein.' }).optional(),
+  explanation: z.string().trim().max(2000),
+  difficulty: z.enum(DIFFICULTIES, { message: 'Schwierigkeit fehlt.' }).optional(),
+});
+
+export type QuestionDraft = z.infer<typeof questionDraftSchema>;
+
 export interface QuestionValidationIssue {
   field: string;
   message: string;

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeTags, parseTagList, validateImportRows, validateQuestionForPublish } from './question';
+import {
+  normalizeTags,
+  parseTagList,
+  questionDraftSchema,
+  questionInputSchema,
+  validateImportRows,
+  validateQuestionForPublish,
+} from './question';
 
 const validQuestion = {
   categoryId: '2c3f4a58-6b1e-4b3f-9a0e-1a2b3c4d5e6f',
@@ -88,5 +95,40 @@ describe('tags', () => {
   it('normalises and de-duplicates tags', () => {
     expect(normalizeTags([' TCP ', 'tcp', '', 'Layer 4'])).toEqual(['tcp', 'layer 4']);
     expect(parseTagList('OSI, TCP;Transport\nosi')).toEqual(['osi', 'tcp', 'transport']);
+  });
+});
+
+describe('questionDraftSchema', () => {
+  const base = {
+    categoryId: '11111111-1111-4111-8111-111111111111',
+    subcategory: '',
+    questionText: '',
+    answerA: '',
+    answerB: '',
+    answerC: '',
+    answerD: '',
+    correctAnswer: 'A' as const,
+    explanation: '',
+    difficulty: 'medium' as const,
+    tags: [],
+    imageUrl: '',
+    audioUrl: '',
+    status: 'draft' as const,
+    requiresPro: false,
+  };
+
+  it('accepts a draft with gaps in it', () => {
+    // Genau das ging vorher nicht: `questionInputSchema.partial()` erlaubt
+    // fehlende Felder, nicht leere – und das Formular schickt immer alle.
+    expect(questionDraftSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('still enforces the limits', () => {
+    expect(questionDraftSchema.safeParse({ ...base, questionText: 'x'.repeat(1001) }).success).toBe(false);
+    expect(questionDraftSchema.safeParse({ ...base, categoryId: 'nope' }).success).toBe(false);
+  });
+
+  it('is not what a published question has to pass', () => {
+    expect(questionInputSchema.safeParse(base).success).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ import { DuelSummaryDialog } from '@/components/friends/DuelSummaryDialog';
 import { SharedQuestionBubble } from '@/components/friends/SharedQuestionBubble';
 import {
   Avatar,
+  Button,
   EmptyState,
   ErrorState,
   IconButton,
@@ -34,6 +35,7 @@ import { settleDuel } from '@/services/api/friendsApi';
 import type { ChatMessage } from '@/services/api/friendsApi';
 import { fetchQuestionsByIds } from '@/services/api/questionsApi';
 import { queryKeys } from '@/services/api/queryKeys';
+import { useFeature } from '@/state/featureStore';
 import { getUserMessage } from '@/services/errors';
 import { useAuthStore } from '@/state/authStore';
 import { makeStyles, radius, spacing, useGradients, useThemeColors } from '@/theme';
@@ -94,7 +96,12 @@ export default function FriendChatScreen() {
   // The whole message, not just the duel: the sheet needs its id to start the
   // round, and who sent it to know whether declining is on offer.
   const [openDuel, setOpenDuel] = useState<ChatMessage | null>(null);
-  useMarkConversationRead(friendId ?? null);
+  // Auch bei einer neuen Nachricht, nicht nur beim Oeffnen: wer den Chat offen
+  // liegen hat, soll den Punkt nicht behalten, bis er ihn einmal schliesst.
+  useMarkConversationRead(friendId ?? null, conversation.messages.at(-1)?.id ?? null);
+  // Der Schalter greift am Einstieg, nicht nur am Tab: ein abgeschaltetes
+  // Duell darf sich nicht herausfordern lassen.
+  const duelsEnabled = useFeature('duels');
 
   // The text of every shared question in this chat, in one request.
   const questionIds = conversation.messages
@@ -245,7 +252,7 @@ export default function FriendChatScreen() {
             </Text>
           ) : null}
 
-          {duelOutstanding ? (
+          {!duelsEnabled ? null : duelOutstanding ? (
             // Kein Knopf, sondern der Grund: ein ausgegrauter Knopf lässt einen
             // suchen, was man falsch macht.
             <View style={[styles.duelBar, styles.duelBarIdle]} accessibilityRole="text">
@@ -289,7 +296,18 @@ export default function FriendChatScreen() {
           message={`Fordere ${friendName} zum Duell heraus – oder schick eine Frage: In einer Quizrunde steht unter jeder Frage „Freund senden".`}
         />
       ) : (
-        conversation.messages.map((message) => {
+        <>
+          {/* Aeltere Nachrichten auf Wunsch. Der Chat laedt das neue Ende
+              zuerst; was davor liegt, holt dieser Knopf. */}
+          {conversation.hasOlder ? (
+            <Button
+              title={conversation.loadingOlder ? 'Wird geladen …' : 'Ältere Nachrichten'}
+              variant="ghost"
+              onPress={conversation.loadOlder}
+              disabled={conversation.loadingOlder}
+            />
+          ) : null}
+          {conversation.messages.map((message) => {
           const mine = message.senderId === myId;
           return (
             <View key={message.id} style={[styles.row, mine ? styles.rowMine : styles.rowTheirs]}>
@@ -398,7 +416,8 @@ export default function FriendChatScreen() {
               </View>
             </View>
           );
-        })
+          })}
+        </>
       )}
 
       {startQuiz.error ? <Text color="danger">{startQuiz.error}</Text> : null}

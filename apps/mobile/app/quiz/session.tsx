@@ -22,6 +22,7 @@ import { ReportQuestionDialog } from '@/components/quiz/ReportQuestionDialog';
 import { Button, EmptyState, IconButton, Screen, Text } from '@/components/ui';
 import { categoryImage } from '@/content/categoryImages';
 import { useSavedQuestionIds, useToggleSavedQuestion } from '@/features/progress/useSavedQuestions';
+import { useFeature } from '@/state/featureStore';
 import { useQuizController } from '@/features/quiz/useQuizController';
 import { shareQuestion } from '@/services/share/shareQuestion';
 import { FixedTheme, makeStyles, radius, spacing, useTheme, useThemeColors } from '@/theme';
@@ -83,6 +84,8 @@ function QuizSession({ contentScheme }: { contentScheme: ColorScheme }) {
   const router = useRouter();
   const navigation = useNavigation();
   const quiz = useQuizController();
+  // Geteilte Fragen haengen am Schalter – auch der Knopf, der eine schickt.
+  const sharingEnabled = useFeature('questionSharing');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   // The question being sent to a friend – null while the sheet is closed.
@@ -394,7 +397,10 @@ function QuizSession({ contentScheme }: { contentScheme: ColorScheme }) {
 
         {/* Inside the app rather than out of it: the question lands in the
             friend's chat, where they can answer it and you see what they
-            picked. "Teilen" beside it still goes to WhatsApp and the rest. */}
+            picked. "Teilen" beside it still goes to WhatsApp and the rest.
+            Haengt am Schalter: ohne geteilte Fragen gibt es auch keinen Knopf,
+            der eine schickt. */}
+        {sharingEnabled ? (
         <Pressable
           onPress={() => setSendingTo(question.id)}
           accessibilityRole="button"
@@ -406,6 +412,7 @@ function QuizSession({ contentScheme }: { contentScheme: ColorScheme }) {
             Freund senden
           </Text>
         </Pressable>
+        ) : null}
       </View>
 
       {/* Dialogs cover the whole screen, so they follow the app's theme like

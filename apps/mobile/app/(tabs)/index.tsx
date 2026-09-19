@@ -18,6 +18,7 @@ import { useDailyQuizStatus } from '@/features/quiz/useDailyQuiz';
 import { useClaimDailyTask, useDailyTasks } from '@/features/quiz/useDailyTasks';
 import { RANDOM_CATEGORY_NAME, useStartQuiz } from '@/features/quiz/useStartQuiz';
 import { getUserMessage } from '@/services/errors';
+import { useFeature } from '@/state/featureStore';
 import type { DailyTaskKey } from '@quizbyte/shared';
 
 import { makeStyles, radius, spacing, useThemeColors } from '@/theme';
@@ -35,6 +36,8 @@ export default function QuizHomeScreen() {
   // Which task is being collected, so only that row shows a spinner.
   const [claiming, setClaiming] = useState<DailyTaskKey | null>(null);
   const daily = useDailyQuizStatus();
+  // Der Schalter entscheidet ueber den Einstieg, nicht nur ueber den Tab.
+  const dailyEnabled = useFeature('dailyQuiz');
   const router = useRouter();
   const [comingSoonTitle, setComingSoonTitle] = useState<string | null>(null);
   // Driven by the pull gesture only – a background refetch must not open the
@@ -65,7 +68,9 @@ export default function QuizHomeScreen() {
     >
       <AppHeader />
 
-      {/* Daily quiz – the one round that pays double */}
+      {/* Daily quiz – the one round that pays double. Der Schalter entscheidet,
+          ob es sie gibt: ausgeschaltet gibt es auch keinen Einstieg. */}
+      {dailyEnabled ? (
       <View style={styles.daily}>
         <DailyQuizCard
           done={daily.done}
@@ -78,6 +83,7 @@ export default function QuizHomeScreen() {
           }
         />
       </View>
+      ) : null}
 
       {/* A rank that was just earned – frames are never put on by themselves. */}
       <FrameUnlockCard

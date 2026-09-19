@@ -1,4 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 
 import { normalizeEmail } from '@quizbyte/shared';
 
@@ -122,9 +123,32 @@ export async function signIn({ email, password }: Credentials): Promise<Session>
   return data.session;
 }
 
-/** Sends the "set a new password" mail. */
+/**
+ * Sends the "set a new password" mail.
+ *
+ * Ohne `redirectTo` endete dieser Weg im Nichts: die Mail ging raus, ihr Link
+ * fuehrte auf eine Webadresse, die es nicht gibt, und die App erfuhr nie davon.
+ * `Linking.createURL` baut die Adresse aus dem Schema der App – im fertigen
+ * Build `quizbyte://auth/reset`, in Expo Go die passende `exp://`-Adresse.
+ *
+ * Die Adresse muss in Supabase unter "Redirect URLs" freigegeben sein; das ist
+ * Betreiberarbeit und kein Code.
+ */
 export async function sendPasswordReset(email: string): Promise<void> {
-  const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email));
+  const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email), {
+    redirectTo: Linking.createURL('auth/reset'),
+  });
+  if (error) throw toAuthError(error);
+}
+
+/**
+ * Setzt das Passwort des angemeldeten Kontos neu.
+ *
+ * Aufgerufen wird das nach dem Link aus der Mail: der hat bereits eine Sitzung
+ * gebracht, und mit ihr darf das Passwort geaendert werden.
+ */
+export async function setNewPassword(password: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password });
   if (error) throw toAuthError(error);
 }
 

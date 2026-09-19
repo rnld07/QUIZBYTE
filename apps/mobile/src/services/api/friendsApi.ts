@@ -263,10 +263,64 @@ export async function fetchDuelRecord(userId: string): Promise<DuelRecord> {
   };
 }
 
-export async function fetchConversation(friendId: string): Promise<ChatMessage[]> {
-  const { data, error } = await supabase.rpc('get_conversation', { p_friend_id: friendId });
+/** Wo eine Seite endet: die aelteste Nachricht, die sie enthielt. */
+export interface ConversationCursor {
+  before: string;
+  beforeId: string;
+}
+
+export interface ConversationPage {
+  /** Neueste zuerst – so kommt die Seite vom Server. */
+  messages: ChatMessage[];
+  /** Null, wenn es nichts Aelteres mehr gibt. */
+  next: ConversationCursor | null;
+}
+
+/** Wie viele Nachrichten eine Seite hat. */
+export const CONVERSATION_PAGE_SIZE = 40;
+
+interface ConversationRow {
+  id: string;
+  sender_id: string;
+  kind: ChatMessage['kind'];
+  question_id: string | null;
+  duel_id: string | null;
+  created_at: string;
+  answer: unknown;
+  duel: unknown;
+}
+
+/**
+ * Eine Seite des Chats, neueste zuerst.
+ *
+ * Frueher las die App die aeltesten hundert Nachrichten und hoerte dort auf –
+ * abgeschnitten wurde also am *neuen* Ende, und ab der 101. Nachricht fehlte
+ * ausgerechnet die letzte. Jetzt kommt das neue Ende zuerst, und Aelteres holt
+ * der Chat nach, wenn jemand danach fragt.
+ */
+export async function fetchConversationPage(
+  friendId: string,
+  cursor: ConversationCursor | null,
+): Promise<ConversationPage> {
+  const { data, error } = await supabase.rpc('get_conversation_page', {
+    p_friend_id: friendId,
+    p_limit: CONVERSATION_PAGE_SIZE,
+    p_before: cursor?.before,
+    p_before_id: cursor?.beforeId,
+  });
   if (error) throw toAppError(error, 'Der Chat konnte nicht geladen werden.');
-  return (data ?? []).map((row) => {
+
+  const rows = (data ?? []) as ConversationRow[];
+  const oldest = rows.at(-1);
+  return {
+    messages: rows.map(toChatMessage),
+    // Eine volle Seite heisst: es koennte mehr geben. Eine halbe heisst: nein.
+    next: rows.length === CONVERSATION_PAGE_SIZE && oldest ? { before: oldest.created_at, beforeId: oldest.id } : null,
+  };
+}
+
+function toChatMessage(row: ConversationRow): ChatMessage {
+  return ((): ChatMessage => {
     const answer = row.answer as { selected_answer: AnswerKey; is_correct: boolean; answered_at: string } | null;
     const duel = row.duel as {
       status: DuelStatus;
@@ -309,7 +363,7 @@ export async function fetchConversation(friendId: string): Promise<ChatMessage[]
           }
         : null,
     };
-  });
+  })();
 }
 
 /**

@@ -1,4 +1,4 @@
-import { features } from '@quizbyte/shared';
+import { useFeatureStore } from '@/state/featureStore';
 import type { Category } from '@quizbyte/shared';
 
 import { toAppError } from '@/services/errors';
@@ -19,5 +19,8 @@ export async function fetchCategories(): Promise<Category[]> {
 
   return (data ?? [])
     .map(toCategory)
-    .filter((category) => features.pro || !category.requiresPro);
+    // Aus dem Store, nicht aus der Konstanten: ein Schalter, den der Server
+    // umlegt, soll auch hier gelten – sonst laedt die App Kategorien, die es
+    // laut Adminbereich gar nicht geben duerfte.
+    .filter((category) => useFeatureStore.getState().flags.pro || !category.requiresPro);
 }

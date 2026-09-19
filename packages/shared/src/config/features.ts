@@ -14,8 +14,15 @@ export const features = {
   duels: true,
   /** Public groups, feeds, comments – explicitly out of scope for now. */
   community: false,
-  /** Daily quiz session type. */
-  dailyQuiz: false,
+  /**
+   * Daily quiz session type – part of V1.
+   *
+   * Stand bis 19.09.2026 auf `false`, waehrend die Karte auf dem Startbildschirm
+   * lag und die Runde doppelte XP zahlte. Ein Schalter, der das Gegenteil
+   * dessen behauptet, was die App tut, ist schlimmer als keiner: wer ihn liest,
+   * glaubt das Feature sei aus.
+   */
+  dailyQuiz: true,
   /** Exam simulation (e.g. AP1) with time limit. */
   examMode: false,
   /** "Schwächen trainieren" – part of V1. */

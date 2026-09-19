@@ -1,13 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import type { AnswerKey, QuizMode } from '@quizbyte/shared';
+
+import type { ConversationCursor } from '@/services/api/friendsApi';
 
 import {
   answerSharedQuestion,
   createDuel,
   declineDuel,
-  fetchConversation,
+  fetchConversationPage,
   fetchFriendProfile,
   fetchFriendRequests,
   fetchFriends,
@@ -182,11 +184,20 @@ export function useDuelRecord(userId: string | null) {
   return { ...query, record: query.data ?? null };
 }
 
-/** The chat with one friend. */
+/**
+ * The chat with one friend.
+ *
+ * Seitenweise, neueste zuerst – so kommt es vom Server, und so muss es auch
+ * sein: abgeschnitten wird am alten Ende, nicht am neuen. Fuers Anzeigen dreht
+ * die Liste hier wieder um, damit der Bildschirm sie von oben nach unten lesen
+ * kann wie bisher.
+ */
 export function useConversation(friendId: string | null) {
-  const query = useQuery({
+  const query = useInfiniteQuery({
     queryKey: [...queryKeys.conversation, friendId],
-    queryFn: () => fetchConversation(friendId as string),
+    queryFn: ({ pageParam }) => fetchConversationPage(friendId as string, pageParam),
+    initialPageParam: null as ConversationCursor | null,
+    getNextPageParam: (lastPage) => lastPage.next,
     enabled: Boolean(friendId),
     // No realtime yet: a short staleness keeps a chat that is open reasonably
     // current without hammering the server.
@@ -194,7 +205,18 @@ export function useConversation(friendId: string | null) {
     refetchInterval: 20_000,
   });
 
-  return { ...query, messages: query.data ?? [] };
+  const messages = (query.data?.pages ?? []).flatMap((page) => page.messages).reverse();
+
+  return {
+    ...query,
+    messages,
+    /** Ob es aeltere Nachrichten gibt, die noch nicht geladen sind. */
+    hasOlder: query.hasNextPage,
+    loadingOlder: query.isFetchingNextPage,
+    loadOlder: () => {
+      if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+    },
+  };
 }
 
 /**
@@ -219,12 +241,15 @@ export function useUnreadCounts() {
 }
 
 /**
- * Marks a chat read when it is opened.
+ * Marks a chat read – beim Oeffnen und bei jeder neuen Nachricht.
  *
- * Fires once per chat rather than on every message: the timestamp is what is
- * stored, so writing it again would say the same thing.
+ * Vorher nur beim Oeffnen. Wer den Chat offen liegen hatte, waehrend der andere
+ * schrieb, sass danach vor einer gelesenen Nachricht mit einem ungelesen-Punkt
+ * daneben – und der blieb, bis der Chat einmal geschlossen und neu geoeffnet
+ * wurde. Der Ausloeser ist die neueste Nachricht: aendert sie sich, wird der
+ * Zeitstempel neu gesetzt, sonst nicht.
  */
-export function useMarkConversationRead(friendId: string | null) {
+export function useMarkConversationRead(friendId: string | null, newestMessageId?: string | null) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -234,7 +259,7 @@ export function useMarkConversationRead(friendId: string | null) {
       // A badge that stays up is a small thing; an error dialog over a chat
       // the user just opened is not.
       .catch(() => undefined);
-  }, [friendId, queryClient]);
+  }, [friendId, newestMessageId, queryClient]);
 }
 
 /** Anything that changes a conversation refreshes it afterwards. */

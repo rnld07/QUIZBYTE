@@ -13,6 +13,24 @@ export const dynamic = 'force-dynamic';
  * für die, die den Code lesen, hier der Satz für die, die auf den Knopf
  * drücken.
  */
+/**
+ * Wo ein Schalter in der App tatsächlich greift.
+ *
+ * Steht hier, weil die Frage beim Umlegen nicht „was heißt das" ist, sondern
+ * „was passiert dann". Ein Schalter ohne Wirkung ist kein Schalter, sondern
+ * eine Notiz – und wer das nicht sieht, legt ihn um und wundert sich.
+ */
+const EFFECTS: Record<string, string> = {
+  pro: 'Wirkt: blendet Pro-Kategorien aus der Kategorienliste aus.',
+  friends: 'Wirkt: blendet den Freundetab aus.',
+  duels: 'Wirkt: blendet „Zum Duell herausfordern" im Chat aus.',
+  community: 'Ohne Wirkung – nicht gebaut.',
+  dailyQuiz: 'Wirkt: blendet die Tagesquiz-Karte auf dem Startbildschirm aus.',
+  examMode: 'Ohne Wirkung – nicht gebaut.',
+  weaknessTraining: 'Wirkt: blendet „Schwächen trainieren" im Fortschritt aus.',
+  questionSharing: 'Wirkt: blendet „Freund senden" unter der Frage aus.',
+};
+
 const DESCRIPTIONS: Record<string, string> = {
   pro: 'Pro-Abo: kostenpflichtige Kategorien, Bezahlschranke, „Pro verwalten".',
   friends: 'Freundetab, Suche nach Benutzernamen, Freundesprofile.',
@@ -73,6 +91,7 @@ export default async function FlagsPage() {
               <div className="flag-row__text">
                 <div className="flag-row__name">{key}</div>
                 <div className="flag-row__desc">{DESCRIPTIONS[key] ?? 'Ohne Beschreibung.'}</div>
+                <div className="flag-row__desc">{EFFECTS[key] ?? 'Wirkung nicht dokumentiert.'}</div>
                 <div className="flag-row__desc">
                   Im Code: {features[key] ? 'an' : 'aus'}
                   {override ? (
@@ -92,7 +111,8 @@ export default async function FlagsPage() {
 
       <p className="hint" style={{ marginTop: 14 }}>
         Die App liest die Überschreibungen über <code>get_feature_flags()</code>. Ein Schalter, der ein bereits
-        gestartetes Quiz betrifft, wirkt erst beim nächsten Start – laufende Runden werden nicht abgebrochen.
+        gestartetes Quiz betrifft, wirkt erst beim nächsten Start – laufende Runden werden nicht abgebrochen. Ein
+        Schalter wirkt am Einstieg: was schon gespielt wurde, bleibt in der Historie stehen.
       </p>
     </>
   );

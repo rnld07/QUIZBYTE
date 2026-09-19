@@ -839,6 +839,61 @@ begin
 end $$;
 
 
+-- 17. The newest message is in the first page ----------------------------------
+-- Der alte Weg las aufsteigend und brach bei hundert ab: abgeschnitten wurde
+-- am neuen Ende, und ab der 101. Nachricht fehlte ausgerechnet die letzte.
+select public.__act_reset();
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000006');
+
+do $$
+declare
+  v_question uuid;
+  v_last uuid;
+  v_first_page uuid[];
+  v_second_page uuid[];
+  v_cursor timestamptz;
+  v_cursor_id uuid;
+begin
+  select q.id into v_question
+  from public.questions q
+  where q.status = 'published' and not q.duel_pool
+  limit 1;
+
+  for i in 1..45 loop
+    v_last := public.send_question_to_friend('bbbbbbbb-0000-4000-8000-000000000005', v_question);
+  end loop;
+
+  select array_agg(p.id order by p.created_at desc, p.id desc)
+    into v_first_page
+  from public.get_conversation_page('bbbbbbbb-0000-4000-8000-000000000005') p;
+
+  assert array_length(v_first_page, 1) = 40, 'a page holds forty messages';
+  assert v_first_page[1] = v_last, 'and the newest one is the first of them';
+
+  select p.created_at, p.id into v_cursor, v_cursor_id
+  from public.get_conversation_page('bbbbbbbb-0000-4000-8000-000000000005') p
+  order by p.created_at, p.id
+  limit 1;
+
+  select array_agg(p.id)
+    into v_second_page
+  from public.get_conversation_page('bbbbbbbb-0000-4000-8000-000000000005', 40, v_cursor, v_cursor_id) p;
+
+  assert array_length(v_second_page, 1) >= 5, 'the older ones come on the next page';
+  assert not (v_second_page && v_first_page), 'and no message appears on both';
+end $$;
+
+-- Ein Unbeteiligter sieht den Chat nicht.
+select public.__act_as('bbbbbbbb-0000-4000-8000-000000000002');
+
+do $$
+begin
+  assert not exists (
+    select 1 from public.get_conversation_page('bbbbbbbb-0000-4000-8000-000000000005') p
+  ), 'a conversation is between the two of them';
+end $$;
+
+
 select public.__act_reset();
 drop table public.__ids;
 drop function public.__act_as(uuid, text);
